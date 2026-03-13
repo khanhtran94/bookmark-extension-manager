@@ -207,6 +207,33 @@
       background: transparent;
     }
 
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .pagination button {
+      border: 1px solid #ccc;
+      background: white;
+      color: #333;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .pagination-info {
+      font-size: 13px;
+      color: #555;
+    }
+
     .folder-create {
       display: grid;
       gap: 8px;
@@ -536,10 +563,16 @@
 
       <div class="bookmarks-panel">
         <div id="bookmarkList"></div>
+        <div class="pagination">
+          <button id="prevPageBtn" type="button">Prev</button>
+          <span id="pageInfo" class="pagination-info">Trang 1/1</span>
+          <button id="nextPageBtn" type="button">Next</button>
+        </div>
       </div>
     </section>
   </div>
 
+  <script src="bookmark-db.js"></script>
   <script src="manager.js"></script>
 </body>
 </html>
