@@ -14,11 +14,16 @@ const renameFolderBtn = document.getElementById("renameFolderBtn");
 const importFileInput = document.getElementById("importFileInput");
 const importBtn = document.getElementById("importBtn");
 const importStatus = document.getElementById("importStatus");
+const prevPageBtn = document.getElementById("prevPageBtn");
+const nextPageBtn = document.getElementById("nextPageBtn");
+const pageInfo = document.getElementById("pageInfo");
 
 const VIEW_MODE_KEY = "bookmarkManagerViewMode";
 const TIME_VIEW_KEY = "bookmarkManagerCreatedView";
 const FILTER_ALL = "__all";
 const FILTER_NONE = "__none";
+const SEARCH_DEBOUNCE_MS = 180;
+const PAGE_SIZE = 10;
 
 let currentViewMode = localStorage.getItem(VIEW_MODE_KEY) === "card" ? "card" : "list";
 let selectedCreatedView = (() => {
@@ -31,6 +36,8 @@ let currentFolders = [];
 let selectedFolderFilter = FILTER_ALL;
 let selectedTagFilter = FILTER_ALL;
 let expandedRootFolderId = "";
+let searchDebounceTimer = null;
+let currentPage = 1;
 
 function formatDate(timestamp) {
   const date = new Date(timestamp || Date.now());
@@ -298,14 +305,6 @@ function getDescendantFolderIds(rootId) {
   return ids;
 }
 
-function saveData({ bookmarks = currentBookmarks, folders = currentFolders }, callback) {
-  chrome.storage.local.set({ bookmarks, folders }, () => {
-    if (typeof callback === "function") {
-      callback();
-    }
-  });
-}
-
 function renderFolderParentOptions() {
   const selectedParent = folderParentSelect.value || "";
   const orderedFolders = getOrderedFoldersForSelect();
@@ -423,8 +422,7 @@ function updateViewButtons() {
   });
 }
 
-function buildFolderOptionsHtml(selectedFolderId = "") {
-  const orderedFolders = getOrderedFoldersForSelect();
+function buildFolderOptionsHtml(selectedFolderId = "", orderedFolders = getOrderedFoldersForSelect()) {
   const options = [
     `<option value="">(Khong gan folder)</option>`,
     ...orderedFolders.map(
@@ -436,7 +434,7 @@ function buildFolderOptionsHtml(selectedFolderId = "") {
   return options.join("");
 }
 
-function buildListItem(bookmark, folderName) {
+function buildListItem(bookmark, folderName, orderedFolders) {
   const tagsHtml = bookmark.tags.length
     ? bookmark.tags.map((tag) => `<span class="tag-chip">#${tag}</span>`).join("")
     : `<span class="tag-chip">#chua-gan-tag</span>`;
@@ -447,7 +445,7 @@ function buildListItem(bookmark, folderName) {
     <div class="bookmark-meta">
       Folder: ${folderName || "(chua gan)"} <br />
       Da luu: ${formatDate(bookmark.createdAt)} <br />
-      Da mo: ${bookmark.clickCount} lan
+      Da mo: <span class="click-count" data-id="${bookmark.id}">${bookmark.clickCount}</span> lan
     </div>
     <div class="tag-list">${tagsHtml}</div>
     <div class="card-tag-input-wrap">
@@ -456,7 +454,7 @@ function buildListItem(bookmark, folderName) {
     </div>
     <div class="folder-editor">
       <select class="folder-select" data-id="${bookmark.id}">
-        ${buildFolderOptionsHtml(bookmark.folderId)}
+        ${buildFolderOptionsHtml(bookmark.folderId, orderedFolders)}
       </select>
       <button class="save-folder-btn" data-id="${bookmark.id}" type="button">Luu folder</button>
     </div>
@@ -467,7 +465,7 @@ function buildListItem(bookmark, folderName) {
   `;
 }
 
-function buildCardItem(bookmark, folderName) {
+function buildCardItem(bookmark, folderName, orderedFolders) {
   const tagsHtml = bookmark.tags.length
     ? bookmark.tags.map((tag) => `<span class="tag-chip">#${tag}</span>`).join("")
     : `<span class="tag-chip">#chua-gan-tag</span>`;
@@ -477,7 +475,7 @@ function buildCardItem(bookmark, folderName) {
     <div class="bookmark-meta">
       Folder: ${folderName || "(chua gan)"} <br />
       Da luu: ${formatDate(bookmark.createdAt)} <br />
-      Da mo: ${bookmark.clickCount} lan
+      Da mo: <span class="click-count" data-id="${bookmark.id}">${bookmark.clickCount}</span> lan
     </div>
     <div class="card-tag-input-wrap">
       <button class="add-tag-btn" data-id="${bookmark.id}" type="button">+</button>
@@ -486,7 +484,7 @@ function buildCardItem(bookmark, folderName) {
     <div class="tag-list">${tagsHtml}</div>
     <div class="folder-editor">
       <select class="folder-select" data-id="${bookmark.id}">
-        ${buildFolderOptionsHtml(bookmark.folderId)}
+        ${buildFolderOptionsHtml(bookmark.folderId, orderedFolders)}
       </select>
       <button class="save-folder-btn" data-id="${bookmark.id}" type="button">Luu folder</button>
     </div>
@@ -501,8 +499,10 @@ function getFilteredBookmarks() {
   const keyword = searchInput.value.trim().toLowerCase();
   const now = Date.now();
   const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const folderNameMap = getFolderNameMap(currentFolders);
   let filtered = currentBookmarks.filter((bookmark) => {
-    const text = `${bookmark.title} ${bookmark.url} ${bookmark.tags.join(" ")}`.toLowerCase();
+    const folderName = folderNameMap[bookmark.folderId] || "";
+    const text = `${bookmark.title} ${bookmark.url} ${bookmark.tags.join(" ")} ${folderName}`.toLowerCase();
     return text.includes(keyword);
   });
 
@@ -528,27 +528,82 @@ function getFilteredBookmarks() {
   return filtered.sort((a, b) => (selectedCreatedView === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt));
 }
 
+function getPaginatedBookmarks(bookmarks) {
+  const totalItems = bookmarks.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if (currentPage > totalPages) {
+    currentPage = totalPages;
+  }
+  if (currentPage < 1) {
+    currentPage = 1;
+  }
+
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+  return {
+    pageItems: bookmarks.slice(start, end),
+    totalItems,
+    totalPages
+  };
+}
+
+function renderPagination(totalItems, totalPages) {
+  if (!pageInfo || !prevPageBtn || !nextPageBtn) {
+    return;
+  }
+
+  pageInfo.textContent = `Trang ${currentPage}/${totalPages} (${totalItems})`;
+  prevPageBtn.disabled = currentPage <= 1;
+  nextPageBtn.disabled = currentPage >= totalPages;
+}
+
+function resetToFirstPage() {
+  currentPage = 1;
+}
+
+function resetSecondaryFiltersForFolderView() {
+  if (searchInput) {
+    searchInput.value = "";
+  }
+  selectedTagFilter = FILTER_ALL;
+  if (tagFilterChips) {
+    renderTagFilterChips();
+  }
+
+  selectedCreatedView = "newest";
+  localStorage.setItem(TIME_VIEW_KEY, selectedCreatedView);
+  if (createdViewSelect) {
+    createdViewSelect.value = selectedCreatedView;
+  }
+}
+
 function renderBookmarks() {
   const folderNameMap = getFolderNameMap(currentFolders);
-  const bookmarks = getFilteredBookmarks();
+  const filteredBookmarks = getFilteredBookmarks();
+  const { pageItems, totalItems, totalPages } = getPaginatedBookmarks(filteredBookmarks);
+  const orderedFolders = getOrderedFoldersForSelect();
 
   bookmarkList.innerHTML = "";
   bookmarkList.classList.toggle("card-view", currentViewMode === "card");
 
-  if (!bookmarks.length) {
+  if (!pageItems.length) {
     bookmarkList.innerHTML = `<div class="empty">Khong co bookmark nao.</div>`;
+    renderPagination(totalItems, totalPages);
     return;
   }
 
-  bookmarks.forEach((bookmark) => {
+  const fragment = document.createDocumentFragment();
+  pageItems.forEach((bookmark) => {
     const item = document.createElement("div");
     const folderName = folderNameMap[bookmark.folderId] || "";
     item.className = `bookmark-item ${currentViewMode === "card" ? "bookmark-card" : "bookmark-list"}`;
     item.innerHTML = currentViewMode === "card"
-      ? buildCardItem(bookmark, folderName)
-      : buildListItem(bookmark, folderName);
-    bookmarkList.appendChild(item);
+      ? buildCardItem(bookmark, folderName, orderedFolders)
+      : buildListItem(bookmark, folderName, orderedFolders);
+    fragment.appendChild(item);
   });
+  bookmarkList.appendChild(fragment);
+  renderPagination(totalItems, totalPages);
 }
 
 function renderAllControls() {
@@ -558,62 +613,68 @@ function renderAllControls() {
   renderBookmarks();
 }
 
-function reloadData() {
-  chrome.storage.local.get(["bookmarks", "folders"], (result) => {
-    const rawBookmarks = result.bookmarks || [];
-    const rawFolders = result.folders || [];
+function scheduleRenderBookmarks() {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
 
-    const normalizedFolders = rawFolders.map(normalizeFolder).filter((folder) => folder.id && folder.name);
-    const folderIdSet = new Set(normalizedFolders.map((folder) => folder.id));
-    const normalizedBookmarks = rawBookmarks.map(normalizeBookmark).map((bookmark) => ({
-      ...bookmark,
-      folderId: folderIdSet.has(bookmark.folderId) ? bookmark.folderId : ""
-    }));
+  searchDebounceTimer = setTimeout(() => {
+    resetToFirstPage();
+    renderBookmarks();
+  }, SEARCH_DEBOUNCE_MS);
+}
 
-    currentFolders = normalizedFolders;
-    currentBookmarks = normalizedBookmarks;
-
-    const needsFolderInit = !Array.isArray(result.folders);
-    const needsBookmarkMigration = rawBookmarks.some(
-      (bookmark) =>
-        !Array.isArray(bookmark.tags) ||
-        typeof bookmark.folderId !== "string" ||
-        typeof bookmark.clickCount !== "number"
-    );
-
-    if (needsFolderInit || needsBookmarkMigration) {
-      saveData({ bookmarks: normalizedBookmarks, folders: normalizedFolders }, () => {
-        renderAllControls();
-      });
-      return;
-    }
-
+async function reloadData() {
+  if (!window.BookmarkDB) {
     renderAllControls();
-  });
+    return;
+  }
+
+  await BookmarkDB.init();
+  await BookmarkDB.migrateFromChromeStorage();
+
+  const rawBookmarks = await BookmarkDB.getAllBookmarks();
+  const rawFolders = await BookmarkDB.getAllFolders();
+
+  const normalizedFolders = rawFolders.map(normalizeFolder).filter((folder) => folder.id && folder.name);
+  const folderIdSet = new Set(normalizedFolders.map((folder) => folder.id));
+  const normalizedBookmarks = rawBookmarks.map(normalizeBookmark).map((bookmark) => ({
+    ...bookmark,
+    folderId: folderIdSet.has(bookmark.folderId) ? bookmark.folderId : ""
+  }));
+
+  currentFolders = normalizedFolders;
+  currentBookmarks = normalizedBookmarks;
+
+  renderAllControls();
 }
 
 function deleteBookmark(id) {
   currentBookmarks = currentBookmarks.filter((bookmark) => bookmark.id !== id);
-  saveData({ bookmarks: currentBookmarks }, () => {
-    renderAllControls();
-  });
+  if (window.BookmarkDB) {
+    BookmarkDB.deleteBookmark(id);
+  }
+  renderAllControls();
 }
 
 function saveBookmarkFolder(id) {
   const select = document.querySelector(`.folder-select[data-id="${id}"]`);
   const folderId = select ? select.value : "";
 
+  let updatedBookmark = null;
   currentBookmarks = currentBookmarks.map((bookmark) => {
     if (bookmark.id !== id) {
       return bookmark;
     }
 
-    return { ...bookmark, folderId };
+    updatedBookmark = { ...bookmark, folderId };
+    return updatedBookmark;
   });
 
-  saveData({ bookmarks: currentBookmarks }, () => {
-    renderAllControls();
-  });
+  if (updatedBookmark && window.BookmarkDB) {
+    BookmarkDB.putBookmark(updatedBookmark);
+  }
+  renderAllControls();
 }
 
 function addTagFromCardInput(id, rawInput) {
@@ -622,20 +683,23 @@ function addTagFromCardInput(id, rawInput) {
     return;
   }
 
+  let updatedBookmark = null;
   currentBookmarks = currentBookmarks.map((bookmark) => {
     if (bookmark.id !== id) {
       return bookmark;
     }
 
-    return {
+    updatedBookmark = {
       ...bookmark,
       tags: mergeTagList(bookmark.tags, newTags)
     };
+    return updatedBookmark;
   });
 
-  saveData({ bookmarks: currentBookmarks }, () => {
-    renderAllControls();
-  });
+  if (updatedBookmark && window.BookmarkDB) {
+    BookmarkDB.putBookmark(updatedBookmark);
+  }
+  renderAllControls();
 }
 
 function openBookmark(id, url) {
@@ -649,20 +713,31 @@ function openBookmark(id, url) {
     return;
   }
 
+  let updatedBookmark = null;
   currentBookmarks = currentBookmarks.map((bookmark) => {
     if (bookmark.id !== id) {
       return bookmark;
     }
 
-    return {
+    updatedBookmark = {
       ...bookmark,
       clickCount: (bookmark.clickCount || 0) + 1
     };
+    return updatedBookmark;
   });
 
-  saveData({ bookmarks: currentBookmarks }, () => {
-    renderAllControls();
-  });
+  const nextCount = updatedBookmark ? updatedBookmark.clickCount : null;
+  if (nextCount !== null) {
+    const countNodes = document.querySelectorAll(`.click-count[data-id="${id}"]`);
+    countNodes.forEach((node) => {
+      node.textContent = String(nextCount);
+    });
+  }
+
+  if (updatedBookmark && window.BookmarkDB) {
+    // Persist asynchronously without forcing a heavy full re-render.
+    BookmarkDB.putBookmark(updatedBookmark);
+  }
 }
 
 function createFolder() {
@@ -686,11 +761,12 @@ function createFolder() {
   };
 
   currentFolders = [...currentFolders, newFolder];
-  saveData({ folders: currentFolders }, () => {
-    newFolderNameInput.value = "";
-    folderParentSelect.value = "";
-    renderAllControls();
-  });
+  if (window.BookmarkDB) {
+    BookmarkDB.putFolder(newFolder);
+  }
+  newFolderNameInput.value = "";
+  folderParentSelect.value = "";
+  renderAllControls();
 }
 
 function renameSelectedFolder() {
@@ -704,20 +780,23 @@ function renameSelectedFolder() {
     return;
   }
 
+  let updatedFolder = null;
   currentFolders = currentFolders.map((folder) => {
     if (folder.id !== selectedFolderFilter) {
       return folder;
     }
 
-    return {
+    updatedFolder = {
       ...folder,
       name: newName
     };
+    return updatedFolder;
   });
 
-  saveData({ folders: currentFolders }, () => {
-    renderAllControls();
-  });
+  if (updatedFolder && window.BookmarkDB) {
+    BookmarkDB.putFolder(updatedFolder);
+  }
+  renderAllControls();
 }
 
 async function importChromeBookmarks() {
@@ -789,18 +868,21 @@ async function importChromeBookmarks() {
 
     currentFolders = workingFolders.map(normalizeFolder);
     currentBookmarks = workingBookmarks.map(normalizeBookmark);
-    saveData({ folders: currentFolders, bookmarks: currentBookmarks }, () => {
-      renderAllControls();
-      importStatus.textContent = `Import xong: them ${insertedCount}, cap nhat ${updatedCount}.`;
-      importFileInput.value = "";
-    });
+
+    if (window.BookmarkDB) {
+      await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
+    }
+
+    renderAllControls();
+    importStatus.textContent = `Import xong: them ${insertedCount}, cap nhat ${updatedCount}.`;
+    importFileInput.value = "";
   } catch (error) {
     importStatus.textContent = "Import that bai. Kiem tra lai file bookmarks.html.";
   }
 }
 
 searchInput.addEventListener("input", () => {
-  renderBookmarks();
+  scheduleRenderBookmarks();
 });
 
 createdViewSelect.value = selectedCreatedView;
@@ -809,6 +891,7 @@ createdViewSelect.addEventListener("change", () => {
   const validValues = new Set(["newest", "oldest", "today", "last7", "last30"]);
   selectedCreatedView = validValues.has(value) ? value : "newest";
   localStorage.setItem(TIME_VIEW_KEY, selectedCreatedView);
+  resetToFirstPage();
   renderBookmarks();
 });
 
@@ -822,6 +905,7 @@ viewButtons.forEach((button) => {
     currentViewMode = mode;
     localStorage.setItem(VIEW_MODE_KEY, mode);
     updateViewButtons();
+    resetToFirstPage();
     renderBookmarks();
   });
 });
@@ -848,13 +932,17 @@ importFileInput.addEventListener("change", () => {
 });
 
 folderAllBtn.addEventListener("click", () => {
+  resetSecondaryFiltersForFolderView();
   selectedFolderFilter = FILTER_ALL;
+  resetToFirstPage();
   renderFolderTree();
   renderBookmarks();
 });
 
 folderNoneBtn.addEventListener("click", () => {
+  resetSecondaryFiltersForFolderView();
   selectedFolderFilter = FILTER_NONE;
+  resetToFirstPage();
   renderFolderTree();
   renderBookmarks();
 });
@@ -872,17 +960,39 @@ folderTree.addEventListener("click", (e) => {
 
   const role = target.getAttribute("data-folder-role");
   if (role === "root") {
+    resetSecondaryFiltersForFolderView();
+    if (selectedFolderFilter === folderId) {
+      selectedFolderFilter = FILTER_ALL;
+      expandedRootFolderId = "";
+      resetToFirstPage();
+      renderFolderTree();
+      renderBookmarks();
+      return;
+    }
+
     expandedRootFolderId = expandedRootFolderId === folderId ? "" : folderId;
     selectedFolderFilter = folderId;
+    resetToFirstPage();
     renderFolderTree();
     renderBookmarks();
     return;
   }
 
   if (role === "child") {
+    resetSecondaryFiltersForFolderView();
+    if (selectedFolderFilter === folderId) {
+      selectedFolderFilter = FILTER_ALL;
+      expandedRootFolderId = "";
+      resetToFirstPage();
+      renderFolderTree();
+      renderBookmarks();
+      return;
+    }
+
     const parentId = target.getAttribute("data-parent-id") || "";
     expandedRootFolderId = parentId;
     selectedFolderFilter = folderId;
+    resetToFirstPage();
     renderFolderTree();
     renderBookmarks();
   }
@@ -900,9 +1010,26 @@ tagFilterChips.addEventListener("click", (e) => {
   }
 
   selectedTagFilter = tag;
+  resetToFirstPage();
   renderTagFilterChips();
   renderBookmarks();
 });
+
+if (prevPageBtn) {
+  prevPageBtn.addEventListener("click", () => {
+    if (currentPage > 1) {
+      currentPage -= 1;
+      renderBookmarks();
+    }
+  });
+}
+
+if (nextPageBtn) {
+  nextPageBtn.addEventListener("click", () => {
+    currentPage += 1;
+    renderBookmarks();
+  });
+}
 
 bookmarkList.addEventListener("click", (e) => {
   const target = e.target;

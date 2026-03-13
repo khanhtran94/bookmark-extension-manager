@@ -84,6 +84,14 @@ function getAutoTags(url) {
 }
 
 saveBtn.addEventListener("click", async () => {
+  if (!window.BookmarkDB) {
+    message.textContent = "Khong the khoi tao bo luu du lieu.";
+    return;
+  }
+
+  await BookmarkDB.init();
+  await BookmarkDB.migrateFromChromeStorage();
+
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const currentTab = tabs[0];
 
@@ -105,32 +113,22 @@ saveBtn.addEventListener("click", async () => {
     tags: mergedInputTags
   };
 
-  chrome.storage.local.get(["bookmarks"], (result) => {
-    const bookmarks = result.bookmarks || [];
+  const existing = await BookmarkDB.findBookmarkByUrl(newBookmark.url);
+  if (existing) {
+    const updatedBookmark = {
+      ...existing,
+      clickCount: typeof existing.clickCount === "number" ? existing.clickCount : 0,
+      tags: mergeTags(Array.isArray(existing.tags) ? existing.tags : [], mergedInputTags)
+    };
+    await BookmarkDB.putBookmark(updatedBookmark);
+    message.textContent = "Link da ton tai, da cap nhat tag.";
+    tagsInput.value = "";
+    return;
+  }
 
-    const existedIndex = bookmarks.findIndex((item) => item.url === newBookmark.url);
-    if (existedIndex !== -1) {
-      const existing = bookmarks[existedIndex];
-      bookmarks[existedIndex] = {
-        ...existing,
-        clickCount: typeof existing.clickCount === "number" ? existing.clickCount : 0,
-        tags: mergeTags(Array.isArray(existing.tags) ? existing.tags : [], mergedInputTags)
-      };
-
-      chrome.storage.local.set({ bookmarks }, () => {
-        message.textContent = "Link da ton tai, da cap nhat tag.";
-        tagsInput.value = "";
-      });
-      return;
-    }
-
-    bookmarks.unshift(newBookmark);
-
-    chrome.storage.local.set({ bookmarks }, () => {
-      message.textContent = "Da luu bookmark thanh cong.";
-      tagsInput.value = "";
-    });
-  });
+  await BookmarkDB.putBookmark(newBookmark);
+  message.textContent = "Da luu bookmark thanh cong.";
+  tagsInput.value = "";
 });
 
 openManagerBtn.addEventListener("click", () => {
