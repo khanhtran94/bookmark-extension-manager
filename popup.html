@@ -6,7 +6,7 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      width: 320px;
+      width: 300px;
       padding: 12px;
     }
 
@@ -15,45 +15,66 @@
       font-size: 18px;
     }
 
-    button {
-      padding: 8px 12px;
-      margin-bottom: 12px;
-      cursor: pointer;
+    .field {
+      margin-bottom: 10px;
     }
 
-    .bookmark-item {
-      border: 1px solid #ddd;
-      padding: 8px;
-      margin-bottom: 8px;
-      border-radius: 6px;
-    }
-
-    .bookmark-title {
-      font-weight: bold;
+    .field label {
+      display: block;
+      font-size: 12px;
+      color: #555;
       margin-bottom: 4px;
     }
 
-    .bookmark-url {
-      font-size: 12px;
-      color: #555;
-      word-break: break-all;
-      margin-bottom: 6px;
+    .field input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 13px;
     }
 
-    .delete-btn {
-      background: #e74c3c;
-      color: white;
-      border: none;
-      padding: 6px 8px;
-      border-radius: 4px;
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
       cursor: pointer;
+      border: none;
+      border-radius: 6px;
+    }
+
+    #saveBtn {
+      background: #4caf50;
+      color: white;
+    }
+
+    #openManagerBtn {
+      background: #2196f3;
+      color: white;
+      margin-bottom: 0;
+    }
+
+    #message {
+      font-size: 13px;
+      color: #333;
+      margin-top: 8px;
+      min-height: 18px;
     }
   </style>
 </head>
 <body>
   <h2>Bookmark Manager</h2>
-  <button id="saveBtn">Lưu tab hiện tại</button>
-  <div id="bookmarkList"></div>
+
+  <div class="field">
+    <label for="tagsInput">Tag (phan cach bang dau phay)</label>
+    <input id="tagsInput" type="text" placeholder="vd: cong-viec, javascript" />
+  </div>
+
+  <button id="saveBtn">Luu tab hien tai</button>
+  <button id="openManagerBtn">Mo trang quan ly</button>
+
+  <div id="message"></div>
 
   <script src="popup.js"></script>
 </body>
