@@ -123,7 +123,7 @@ function normalizeBookmark(bookmark) {
   return {
     ...bookmark,
     tags: Array.isArray(bookmark.tags) ? bookmark.tags : [],
-    folderId: typeof bookmark.folderId === "string" ? bookmark.folderId : "",
+    folderId: typeof bookmark.folderId === "string" ? bookmark.folderId.trim() : "",
     createdAt: typeof bookmark.createdAt === "number" ? bookmark.createdAt : Date.now(),
     clickCount: typeof bookmark.clickCount === "number" ? bookmark.clickCount : 0
   };
@@ -131,11 +131,73 @@ function normalizeBookmark(bookmark) {
 
 function normalizeFolder(folder) {
   return {
-    id: folder.id,
+    id: String(folder.id || "").trim(),
     name: (folder.name || "").trim(),
-    parentId: typeof folder.parentId === "string" ? folder.parentId : "",
+    parentId: typeof folder.parentId === "string" ? folder.parentId.trim() : "",
     createdAt: typeof folder.createdAt === "number" ? folder.createdAt : Date.now()
   };
+}
+
+function getLegacyFolderNameFromBookmark(bookmark, folderNameMap = {}) {
+  const idBasedName = folderNameMap[String(bookmark.folderId || "").trim()];
+  if (idBasedName) {
+    return idBasedName;
+  }
+
+  const directNameCandidates = [
+    bookmark.folderName,
+    bookmark.folder
+  ];
+
+  for (const candidate of directNameCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  if (Array.isArray(bookmark.folderPath) && bookmark.folderPath.length) {
+    const last = bookmark.folderPath[bookmark.folderPath.length - 1];
+    if (typeof last === "string" && last.trim()) {
+      return last.trim();
+    }
+  }
+
+  const rawFolderId = bookmark.folderId;
+  if (typeof rawFolderId === "string" && rawFolderId.trim()) {
+    return rawFolderId.trim();
+  }
+
+  return "";
+}
+
+function buildFolderLookup(folders) {
+  const idSet = new Set();
+  const nameToFirstId = {};
+
+  folders.forEach((folder) => {
+    idSet.add(folder.id);
+    const key = folder.name.trim().toLowerCase();
+    if (key && !nameToFirstId[key]) {
+      nameToFirstId[key] = folder.id;
+    }
+  });
+
+  return { idSet, nameToFirstId };
+}
+
+function resolveFolderIdForBookmark(bookmark, folderLookup) {
+  const normalizedFolderId = String(bookmark.folderId || "").trim();
+  if (normalizedFolderId && folderLookup.idSet.has(normalizedFolderId)) {
+    return normalizedFolderId;
+  }
+
+  const legacyName = getLegacyFolderNameFromBookmark(bookmark, {});
+  const normalizedLegacyName = legacyName.trim().toLowerCase();
+  if (normalizedLegacyName && folderLookup.nameToFirstId[normalizedLegacyName]) {
+    return folderLookup.nameToFirstId[normalizedLegacyName];
+  }
+
+  return "";
 }
 
 function getFolderNameMap(folders) {
@@ -514,7 +576,28 @@ function getFilteredBookmarks() {
     filtered = filtered.filter((bookmark) => !bookmark.folderId);
   } else if (selectedFolderFilter !== FILTER_ALL) {
     const folderIds = getDescendantFolderIds(selectedFolderFilter);
-    filtered = filtered.filter((bookmark) => folderIds.has(bookmark.folderId));
+    const selectedFolderNames = new Set(
+      Array.from(folderIds)
+        .map((id) => (folderNameMap[id] || "").trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    filtered = filtered.filter((bookmark) => {
+      const bookmarkFolderId = String(bookmark.folderId || "").trim();
+      if (folderIds.has(bookmarkFolderId)) {
+        return true;
+      }
+
+      if (!selectedFolderNames.size) {
+        return false;
+      }
+
+      const legacyFolderName = getLegacyFolderNameFromBookmark(bookmark, folderNameMap).trim().toLowerCase();
+      if (!legacyFolderName) {
+        return false;
+      }
+      return selectedFolderNames.has(legacyFolderName);
+    });
   }
 
   if (selectedCreatedView === "today") {
@@ -595,7 +678,7 @@ function renderBookmarks() {
   const fragment = document.createDocumentFragment();
   pageItems.forEach((bookmark) => {
     const item = document.createElement("div");
-    const folderName = folderNameMap[bookmark.folderId] || "";
+    const folderName = getLegacyFolderNameFromBookmark(bookmark, folderNameMap);
     item.className = `bookmark-item ${currentViewMode === "card" ? "bookmark-card" : "bookmark-list"}`;
     item.innerHTML = currentViewMode === "card"
       ? buildCardItem(bookmark, folderName, orderedFolders)
@@ -637,11 +720,13 @@ async function reloadData() {
   const rawFolders = await BookmarkDB.getAllFolders();
 
   const normalizedFolders = rawFolders.map(normalizeFolder).filter((folder) => folder.id && folder.name);
-  const folderIdSet = new Set(normalizedFolders.map((folder) => folder.id));
-  const normalizedBookmarks = rawBookmarks.map(normalizeBookmark).map((bookmark) => ({
-    ...bookmark,
-    folderId: folderIdSet.has(bookmark.folderId) ? bookmark.folderId : ""
-  }));
+  const folderLookup = buildFolderLookup(normalizedFolders);
+  const normalizedBookmarks = rawBookmarks
+    .map(normalizeBookmark)
+    .map((bookmark) => ({
+      ...bookmark,
+      folderId: resolveFolderIdForBookmark(bookmark, folderLookup)
+    }));
 
   currentFolders = normalizedFolders;
   currentBookmarks = normalizedBookmarks;
