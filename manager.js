@@ -17,9 +17,13 @@ const importStatus = document.getElementById("importStatus");
 const prevPageBtn = document.getElementById("prevPageBtn");
 const nextPageBtn = document.getElementById("nextPageBtn");
 const pageInfo = document.getElementById("pageInfo");
+const viewTabChips = document.getElementById("viewTabChips");
+const newViewTabInput = document.getElementById("newViewTabInput");
+const addViewTabBtn = document.getElementById("addViewTabBtn");
 
 const VIEW_MODE_KEY = "bookmarkManagerViewMode";
 const TIME_VIEW_KEY = "bookmarkManagerCreatedView";
+const CUSTOM_VIEW_TABS_KEY = "bookmarkManagerCustomViewTabs";
 const FILTER_ALL = "__all";
 const FILTER_NONE = "__none";
 const SEARCH_DEBOUNCE_MS = 180;
@@ -35,9 +39,13 @@ let currentBookmarks = [];
 let currentFolders = [];
 let selectedFolderFilter = FILTER_ALL;
 let selectedTagFilter = FILTER_ALL;
+let selectedViewTab = FILTER_ALL;
+let customViewTabs = [];
 let expandedRootFolderId = "";
 let searchDebounceTimer = null;
 let currentPage = 1;
+
+customViewTabs = loadCustomViewTabs();
 
 function formatDate(timestamp) {
   const date = new Date(timestamp || Date.now());
@@ -63,6 +71,66 @@ function mergeTagList(currentTags = [], incomingTags = []) {
   ]);
 
   return Array.from(unique).filter(Boolean);
+}
+
+function normalizeViewTabName(rawValue) {
+  const value = String(rawValue || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (value.toLowerCase() === FILTER_ALL) {
+    return "";
+  }
+  return value;
+}
+
+function loadCustomViewTabs() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CUSTOM_VIEW_TABS_KEY) || "[]");
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const seen = new Set();
+    const result = [];
+    parsed.forEach((item) => {
+      const normalized = normalizeViewTabName(item);
+      const key = normalized.toLowerCase();
+      if (!normalized || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      result.push(normalized);
+    });
+    return result;
+  } catch (error) {
+    return [];
+  }
+}
+
+function persistCustomViewTabs() {
+  localStorage.setItem(CUSTOM_VIEW_TABS_KEY, JSON.stringify(customViewTabs));
+}
+
+function getAvailableViewTabs() {
+  const seen = new Set();
+  const tabs = [];
+
+  const allCandidates = [
+    ...customViewTabs,
+    ...currentBookmarks.map((bookmark) => normalizeViewTabName(bookmark.viewTab))
+  ];
+
+  allCandidates.forEach((item) => {
+    const normalized = normalizeViewTabName(item);
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    tabs.push(normalized);
+  });
+
+  return tabs.sort((a, b) => a.localeCompare(b));
 }
 
 function inferTagFromHostname(hostname) {
@@ -124,6 +192,7 @@ function normalizeBookmark(bookmark) {
     ...bookmark,
     tags: Array.isArray(bookmark.tags) ? bookmark.tags : [],
     folderId: typeof bookmark.folderId === "string" ? bookmark.folderId.trim() : "",
+    viewTab: normalizeViewTabName(bookmark.viewTab || bookmark.tab),
     createdAt: typeof bookmark.createdAt === "number" ? bookmark.createdAt : Date.now(),
     clickCount: typeof bookmark.clickCount === "number" ? bookmark.clickCount : 0
   };
@@ -272,6 +341,38 @@ function parseChromeBookmarksHtml(htmlText) {
   }
 
   const importedItems = [];
+  const rootWrapperNames = new Set([
+    "bookmarks bar",
+    "bookmark bar",
+    "other bookmarks",
+    "mobile bookmarks",
+    "bookmarks",
+    "thanh dau trang",
+    "dau trang khac",
+    "dau trang tren di dong"
+  ]);
+
+  function shouldSkipRootWrapper(headingNode, folderName, folderPath) {
+    if (!headingNode || !folderName || folderPath.length !== 0) {
+      return false;
+    }
+
+    const attrNames = [
+      "personal_toolbar_folder",
+      "unfiled_bookmarks_folder",
+      "mobile_bookmarks_folder",
+      "bookmarks_menu",
+      "toolbar_folder",
+      "other_bookmarks_folder"
+    ];
+    const hasChromeRootAttr = attrNames.some((attr) => headingNode.hasAttribute(attr));
+    if (hasChromeRootAttr) {
+      return true;
+    }
+
+    const normalizedName = folderName.trim().toLowerCase();
+    return rootWrapperNames.has(normalizedName);
+  }
 
   function addBookmarkFromAnchor(anchorNode, folderPath) {
     const url = anchorNode.getAttribute("href") || "";
@@ -321,7 +422,9 @@ function parseChromeBookmarksHtml(htmlText) {
             }
 
             if (nestedDl) {
-              walkNode(nestedDl, [...folderPath, folderName]);
+              const skipWrapper = shouldSkipRootWrapper(heading, folderName, folderPath);
+              const nextPath = skipWrapper ? folderPath : [...folderPath, folderName];
+              walkNode(nestedDl, nextPath);
             }
           }
         }
@@ -475,6 +578,28 @@ function renderTagFilterChips() {
   tagFilterChips.innerHTML = chipsHtml.join("");
 }
 
+function renderViewTabChips() {
+  if (!viewTabChips) {
+    return;
+  }
+
+  const availableTabs = getAvailableViewTabs();
+  const hasSelected = selectedViewTab === FILTER_ALL
+    || availableTabs.some((tab) => tab.toLowerCase() === selectedViewTab.toLowerCase());
+  if (!hasSelected) {
+    selectedViewTab = FILTER_ALL;
+  }
+
+  const chipsHtml = [
+    `<button type="button" class="view-tab-btn ${selectedViewTab === FILTER_ALL ? "active" : ""}" data-view-tab-filter="${FILTER_ALL}">All</button>`,
+    ...availableTabs.map((tab) => {
+      const isActive = selectedViewTab !== FILTER_ALL && selectedViewTab.toLowerCase() === tab.toLowerCase();
+      return `<button type="button" class="view-tab-btn ${isActive ? "active" : ""}" data-view-tab-filter="${tab}">${tab}</button>`;
+    })
+  ];
+  viewTabChips.innerHTML = chipsHtml.join("");
+}
+
 function updateViewButtons() {
   viewButtons.forEach((button) => {
     const mode = button.getAttribute("data-view-mode");
@@ -496,6 +621,19 @@ function buildFolderOptionsHtml(selectedFolderId = "", orderedFolders = getOrder
   return options.join("");
 }
 
+function buildViewTabOptionsHtml(selectedTab = "") {
+  const normalizedSelected = normalizeViewTabName(selectedTab);
+  const availableTabs = getAvailableViewTabs();
+  const options = [
+    `<option value="">(All)</option>`,
+    ...availableTabs.map((tab) => {
+      const isSelected = normalizedSelected && normalizedSelected.toLowerCase() === tab.toLowerCase();
+      return `<option value="${tab}" ${isSelected ? "selected" : ""}>${tab}</option>`;
+    })
+  ];
+  return options.join("");
+}
+
 function buildListItem(bookmark, folderName, orderedFolders) {
   const tagsHtml = bookmark.tags.length
     ? bookmark.tags.map((tag) => `<span class="tag-chip">#${tag}</span>`).join("")
@@ -506,6 +644,7 @@ function buildListItem(bookmark, folderName, orderedFolders) {
     <div class="bookmark-url">${bookmark.url}</div>
     <div class="bookmark-meta">
       Folder: ${folderName || "(chua gan)"} <br />
+      Tab: ${bookmark.viewTab || "(all)"} <br />
       Da luu: ${formatDate(bookmark.createdAt)} <br />
       Da mo: <span class="click-count" data-id="${bookmark.id}">${bookmark.clickCount}</span> lan
     </div>
@@ -519,6 +658,12 @@ function buildListItem(bookmark, folderName, orderedFolders) {
         ${buildFolderOptionsHtml(bookmark.folderId, orderedFolders)}
       </select>
       <button class="save-folder-btn" data-id="${bookmark.id}" type="button">Luu folder</button>
+    </div>
+    <div class="folder-editor">
+      <select class="view-tab-select" data-id="${bookmark.id}">
+        ${buildViewTabOptionsHtml(bookmark.viewTab)}
+      </select>
+      <button class="save-view-tab-btn" data-id="${bookmark.id}" type="button">Luu tab</button>
     </div>
     <div class="actions">
       <button class="open-btn" data-id="${bookmark.id}" data-url="${bookmark.url}" type="button">Mo link</button>
@@ -536,6 +681,7 @@ function buildCardItem(bookmark, folderName, orderedFolders) {
     <div class="bookmark-title">${bookmark.title}</div>
     <div class="bookmark-meta">
       Folder: ${folderName || "(chua gan)"} <br />
+      Tab: ${bookmark.viewTab || "(all)"} <br />
       Da luu: ${formatDate(bookmark.createdAt)} <br />
       Da mo: <span class="click-count" data-id="${bookmark.id}">${bookmark.clickCount}</span> lan
     </div>
@@ -549,6 +695,12 @@ function buildCardItem(bookmark, folderName, orderedFolders) {
         ${buildFolderOptionsHtml(bookmark.folderId, orderedFolders)}
       </select>
       <button class="save-folder-btn" data-id="${bookmark.id}" type="button">Luu folder</button>
+    </div>
+    <div class="folder-editor">
+      <select class="view-tab-select" data-id="${bookmark.id}">
+        ${buildViewTabOptionsHtml(bookmark.viewTab)}
+      </select>
+      <button class="save-view-tab-btn" data-id="${bookmark.id}" type="button">Luu tab</button>
     </div>
     <div class="actions">
       <button class="open-btn" data-id="${bookmark.id}" data-url="${bookmark.url}" type="button">Open</button>
@@ -564,9 +716,15 @@ function getFilteredBookmarks() {
   const folderNameMap = getFolderNameMap(currentFolders);
   let filtered = currentBookmarks.filter((bookmark) => {
     const folderName = folderNameMap[bookmark.folderId] || "";
-    const text = `${bookmark.title} ${bookmark.url} ${bookmark.tags.join(" ")} ${folderName}`.toLowerCase();
+    const text = `${bookmark.title} ${bookmark.url} ${bookmark.tags.join(" ")} ${folderName} ${bookmark.viewTab || ""}`.toLowerCase();
     return text.includes(keyword);
   });
+
+  if (selectedViewTab !== FILTER_ALL) {
+    filtered = filtered.filter(
+      (bookmark) => normalizeViewTabName(bookmark.viewTab).toLowerCase() === selectedViewTab.toLowerCase()
+    );
+  }
 
   if (selectedTagFilter !== FILTER_ALL) {
     filtered = filtered.filter((bookmark) => bookmark.tags.includes(selectedTagFilter));
@@ -693,6 +851,7 @@ function renderAllControls() {
   renderFolderParentOptions();
   renderFolderTree();
   renderTagFilterChips();
+  renderViewTabChips();
   renderBookmarks();
 }
 
@@ -760,6 +919,58 @@ function saveBookmarkFolder(id) {
     BookmarkDB.putBookmark(updatedBookmark);
   }
   renderAllControls();
+}
+
+function saveBookmarkViewTab(id) {
+  const select = document.querySelector(`.view-tab-select[data-id="${id}"]`);
+  const viewTab = normalizeViewTabName(select ? select.value : "");
+  if (viewTab) {
+    const exists = customViewTabs.some((item) => item.toLowerCase() === viewTab.toLowerCase());
+    if (!exists) {
+      customViewTabs.push(viewTab);
+      customViewTabs = getAvailableViewTabs();
+      persistCustomViewTabs();
+    }
+  }
+
+  let updatedBookmark = null;
+  currentBookmarks = currentBookmarks.map((bookmark) => {
+    if (bookmark.id !== id) {
+      return bookmark;
+    }
+
+    updatedBookmark = { ...bookmark, viewTab };
+    return updatedBookmark;
+  });
+
+  if (updatedBookmark && window.BookmarkDB) {
+    BookmarkDB.putBookmark(updatedBookmark);
+  }
+  renderAllControls();
+}
+
+function addCustomViewTab() {
+  if (!newViewTabInput) {
+    return;
+  }
+
+  const tabName = normalizeViewTabName(newViewTabInput.value);
+  if (!tabName) {
+    return;
+  }
+
+  const exists = customViewTabs.some((item) => item.toLowerCase() === tabName.toLowerCase());
+  if (!exists) {
+    customViewTabs.push(tabName);
+    customViewTabs = getAvailableViewTabs();
+    persistCustomViewTabs();
+  }
+
+  newViewTabInput.value = "";
+  selectedViewTab = tabName;
+  resetToFirstPage();
+  renderViewTabChips();
+  renderBookmarks();
 }
 
 function addTagFromCardInput(id, rawInput) {
@@ -1100,6 +1311,37 @@ tagFilterChips.addEventListener("click", (e) => {
   renderBookmarks();
 });
 
+if (viewTabChips) {
+  viewTabChips.addEventListener("click", (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const tab = target.getAttribute("data-view-tab-filter");
+    if (!tab) {
+      return;
+    }
+
+    selectedViewTab = tab;
+    resetToFirstPage();
+    renderViewTabChips();
+    renderBookmarks();
+  });
+}
+
+if (addViewTabBtn) {
+  addViewTabBtn.addEventListener("click", addCustomViewTab);
+}
+
+if (newViewTabInput) {
+  newViewTabInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      addCustomViewTab();
+    }
+  });
+}
+
 if (prevPageBtn) {
   prevPageBtn.addEventListener("click", () => {
     if (currentPage > 1) {
@@ -1141,6 +1383,14 @@ bookmarkList.addEventListener("click", (e) => {
     const id = target.getAttribute("data-id");
     if (id) {
       saveBookmarkFolder(id);
+    }
+    return;
+  }
+
+  if (target.classList.contains("save-view-tab-btn")) {
+    const id = target.getAttribute("data-id");
+    if (id) {
+      saveBookmarkViewTab(id);
     }
     return;
   }

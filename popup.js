@@ -83,6 +83,16 @@ function getAutoTags(url) {
   }
 }
 
+function notifyBookmarkUpdated(url) {
+  if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+    return;
+  }
+  chrome.runtime.sendMessage({ type: "bookmark-updated", url }, () => {
+    // Ignore fire-and-forget messaging errors.
+    void chrome.runtime.lastError;
+  });
+}
+
 saveBtn.addEventListener("click", async () => {
   if (!window.BookmarkDB) {
     message.textContent = "Khong the khoi tao bo luu du lieu.";
@@ -121,12 +131,14 @@ saveBtn.addEventListener("click", async () => {
       tags: mergeTags(Array.isArray(existing.tags) ? existing.tags : [], mergedInputTags)
     };
     await BookmarkDB.putBookmark(updatedBookmark);
+    notifyBookmarkUpdated(updatedBookmark.url);
     message.textContent = "Link da ton tai, da cap nhat tag.";
     tagsInput.value = "";
     return;
   }
 
   await BookmarkDB.putBookmark(newBookmark);
+  notifyBookmarkUpdated(newBookmark.url);
   message.textContent = "Da luu bookmark thanh cong.";
   tagsInput.value = "";
 });

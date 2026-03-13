@@ -66,12 +66,13 @@
 
     .manager-layout {
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr);
+      grid-template-columns: 280px minmax(0, 1fr) 280px;
       gap: 16px;
       align-items: start;
     }
 
-    .sidebar {
+    .sidebar,
+    .tag-sidebar {
       background: white;
       border: 1px solid #ddd;
       border-radius: 8px;
@@ -81,6 +82,7 @@
     }
 
     .sidebar h2,
+    .tag-sidebar h2,
     .content h2 {
       margin: 0 0 10px 0;
       font-size: 16px;
@@ -172,14 +174,6 @@
       min-width: 0;
     }
 
-    .tag-filter-panel {
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
-    }
-
     .tag-filter-chips {
       display: flex;
       flex-wrap: wrap;
@@ -205,6 +199,64 @@
 
     .bookmarks-panel {
       background: transparent;
+    }
+
+    .view-tabs-panel {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .view-tabs-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .view-tab-btn {
+      border: 1px solid #d7d7d7;
+      border-radius: 999px;
+      background: white;
+      color: #333;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 6px 10px;
+    }
+
+    .view-tab-btn.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-weight: bold;
+    }
+
+    .view-tab-editor {
+      display: flex;
+      gap: 8px;
+    }
+
+    .view-tab-editor input {
+      flex: 1;
+      padding: 8px;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+
+    .view-tab-editor button {
+      border: none;
+      border-radius: 6px;
+      background: #5c6bc0;
+      color: white;
+      font-size: 13px;
+      padding: 8px 10px;
+      cursor: pointer;
     }
 
     .pagination {
@@ -495,7 +547,8 @@
         grid-template-columns: 1fr;
       }
 
-      .sidebar {
+      .sidebar,
+      .tag-sidebar {
         position: static;
       }
     }
@@ -556,12 +609,14 @@
     </aside>
 
     <section class="content">
-      <div class="tag-filter-panel">
-        <h2>Tag Filter</h2>
-        <div id="tagFilterChips" class="tag-filter-chips"></div>
-      </div>
-
       <div class="bookmarks-panel">
+        <div class="view-tabs-panel">
+          <div id="viewTabChips" class="view-tabs-row"></div>
+          <div class="view-tab-editor">
+            <input id="newViewTabInput" type="text" placeholder="Them tab view (Daily, AI, noteLLM...)" />
+            <button id="addViewTabBtn" type="button">Them tab</button>
+          </div>
+        </div>
         <div id="bookmarkList"></div>
         <div class="pagination">
           <button id="prevPageBtn" type="button">Prev</button>
@@ -570,6 +625,11 @@
         </div>
       </div>
     </section>
+
+    <aside class="tag-sidebar">
+      <h2>Tag Filter</h2>
+      <div id="tagFilterChips" class="tag-filter-chips"></div>
+    </aside>
   </div>
 
   <script src="bookmark-db.js"></script>
