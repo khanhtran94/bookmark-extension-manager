@@ -272,6 +272,38 @@ function parseChromeBookmarksHtml(htmlText) {
   }
 
   const importedItems = [];
+  const rootWrapperNames = new Set([
+    "bookmarks bar",
+    "bookmark bar",
+    "other bookmarks",
+    "mobile bookmarks",
+    "bookmarks",
+    "thanh dau trang",
+    "dau trang khac",
+    "dau trang tren di dong"
+  ]);
+
+  function shouldSkipRootWrapper(headingNode, folderName, folderPath) {
+    if (!headingNode || !folderName || folderPath.length !== 0) {
+      return false;
+    }
+
+    const attrNames = [
+      "personal_toolbar_folder",
+      "unfiled_bookmarks_folder",
+      "mobile_bookmarks_folder",
+      "bookmarks_menu",
+      "toolbar_folder",
+      "other_bookmarks_folder"
+    ];
+    const hasChromeRootAttr = attrNames.some((attr) => headingNode.hasAttribute(attr));
+    if (hasChromeRootAttr) {
+      return true;
+    }
+
+    const normalizedName = folderName.trim().toLowerCase();
+    return rootWrapperNames.has(normalizedName);
+  }
 
   function addBookmarkFromAnchor(anchorNode, folderPath) {
     const url = anchorNode.getAttribute("href") || "";
@@ -321,7 +353,9 @@ function parseChromeBookmarksHtml(htmlText) {
             }
 
             if (nestedDl) {
-              walkNode(nestedDl, [...folderPath, folderName]);
+              const skipWrapper = shouldSkipRootWrapper(heading, folderName, folderPath);
+              const nextPath = skipWrapper ? folderPath : [...folderPath, folderName];
+              walkNode(nestedDl, nextPath);
             }
           }
         }
