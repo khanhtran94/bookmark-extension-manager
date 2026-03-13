@@ -204,53 +204,80 @@ function parseChromeBookmarksHtml(htmlText) {
 
   const importedItems = [];
 
-  function walkDl(dlNode, folderPath = []) {
-    const nodes = Array.from(dlNode.children);
+  function addBookmarkFromAnchor(anchorNode, folderPath) {
+    const url = anchorNode.getAttribute("href") || "";
+    if (!url || /^javascript:/i.test(url)) {
+      return;
+    }
+
+    const title = (anchorNode.textContent || "").trim() || "Khong co tieu de";
+    const addDateAttr = anchorNode.getAttribute("add_date");
+    const addDateSec = Number(addDateAttr);
+    const createdAt = Number.isFinite(addDateSec) && addDateSec > 0
+      ? addDateSec * 1000
+      : Date.now();
+
+    importedItems.push({
+      url,
+      title,
+      folderPath,
+      createdAt
+    });
+  }
+
+  function walkNode(containerNode, folderPath = []) {
+    const nodes = Array.from(containerNode.children || []);
     nodes.forEach((node) => {
       const tag = node.tagName ? node.tagName.toLowerCase() : "";
 
       if (tag === "dt") {
         const directLink = node.querySelector(":scope > a");
         if (directLink) {
-          const url = directLink.getAttribute("href") || "";
-          if (!url) {
-            return;
-          }
-
-          const title = (directLink.textContent || "").trim() || "Khong co tieu de";
-          const addDateAttr = directLink.getAttribute("add_date");
-          const addDateSec = Number(addDateAttr);
-          const createdAt = Number.isFinite(addDateSec) && addDateSec > 0
-            ? addDateSec * 1000
-            : Date.now();
-
-          importedItems.push({
-            url,
-            title,
-            folderPath,
-            createdAt
-          });
-          return;
+          addBookmarkFromAnchor(directLink, folderPath);
         }
 
         const heading = node.querySelector(":scope > h3");
         if (heading) {
           const folderName = (heading.textContent || "").trim();
-          const siblingDl = node.nextElementSibling;
-          if (folderName && siblingDl && siblingDl.tagName && siblingDl.tagName.toLowerCase() === "dl") {
-            walkDl(siblingDl, [...folderPath, folderName]);
+          if (folderName) {
+            let nestedDl = node.querySelector(":scope > dl");
+            if (!nestedDl) {
+              let sibling = node.nextElementSibling;
+              while (sibling && sibling.tagName && sibling.tagName.toLowerCase() === "p") {
+                sibling = sibling.nextElementSibling;
+              }
+              if (sibling && sibling.tagName && sibling.tagName.toLowerCase() === "dl") {
+                nestedDl = sibling;
+              }
+            }
+
+            if (nestedDl) {
+              walkNode(nestedDl, [...folderPath, folderName]);
+            }
           }
+        }
+
+        const nestedDlSameLevel = node.querySelector(":scope > dl");
+        if (nestedDlSameLevel) {
+          walkNode(nestedDlSameLevel, folderPath);
         }
         return;
       }
 
-      if (tag === "dl") {
-        walkDl(node, folderPath);
+      if (tag === "dl" || tag === "p") {
+        walkNode(node, folderPath);
       }
     });
   }
 
-  walkDl(rootDl, []);
+  walkNode(rootDl, []);
+
+  if (!importedItems.length) {
+    // Fallback for non-standard bookmark exports: import all anchors.
+    const anchors = Array.from(doc.querySelectorAll("a[href]"));
+    anchors.forEach((anchor) => addBookmarkFromAnchor(anchor, []));
+  }
+
   return importedItems;
 }
 
