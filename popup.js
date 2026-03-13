@@ -32,6 +32,57 @@ function mergeTags(currentTags = [], incomingTags = []) {
   return Array.from(unique).filter(Boolean);
 }
 
+function inferTagFromHostname(hostname) {
+  const cleanHostname = hostname
+    .replace(/^www\./, "")
+    .replace(/^m\./, "")
+    .toLowerCase();
+
+  const domainTagMap = {
+    "youtube.com": "youtube",
+    "youtu.be": "youtube",
+    "facebook.com": "facebook",
+    "x.com": "x",
+    "twitter.com": "x",
+    "instagram.com": "instagram",
+    "linkedin.com": "linkedin",
+    "github.com": "github",
+    "gitlab.com": "gitlab",
+    "reddit.com": "reddit",
+    "medium.com": "medium",
+    "tiktok.com": "tiktok"
+  };
+
+  if (domainTagMap[cleanHostname]) {
+    return domainTagMap[cleanHostname];
+  }
+
+  const parts = cleanHostname.split(".").filter(Boolean);
+  if (parts.length <= 1) {
+    return cleanHostname || "";
+  }
+
+  // Handle common country-code domains like "example.co.uk".
+  const lastPart = parts[parts.length - 1];
+  const secondLastPart = parts[parts.length - 2];
+  const commonSecondLevel = new Set(["co", "com", "net", "org"]);
+  if (lastPart.length === 2 && commonSecondLevel.has(secondLastPart) && parts.length >= 3) {
+    return parts[parts.length - 3];
+  }
+
+  return secondLastPart;
+}
+
+function getAutoTags(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const inferred = inferTagFromHostname(hostname);
+    return inferred ? [inferred] : [];
+  } catch (error) {
+    return [];
+  }
+}
+
 saveBtn.addEventListener("click", async () => {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const currentTab = tabs[0];
@@ -42,13 +93,16 @@ saveBtn.addEventListener("click", async () => {
   }
 
   const tags = parseTags(tagsInput.value || "");
+  const autoTags = getAutoTags(currentTab.url);
+  const mergedInputTags = mergeTags(tags, autoTags);
   const newBookmark = {
     id: Date.now().toString(),
     title: currentTab.title || "Khong co tieu de",
     url: currentTab.url,
     domain: getDomain(currentTab.url),
     createdAt: Date.now(),
-    tags
+    clickCount: 0,
+    tags: mergedInputTags
   };
 
   chrome.storage.local.get(["bookmarks"], (result) => {
@@ -59,7 +113,8 @@ saveBtn.addEventListener("click", async () => {
       const existing = bookmarks[existedIndex];
       bookmarks[existedIndex] = {
         ...existing,
-        tags: mergeTags(Array.isArray(existing.tags) ? existing.tags : [], tags)
+        clickCount: typeof existing.clickCount === "number" ? existing.clickCount : 0,
+        tags: mergeTags(Array.isArray(existing.tags) ? existing.tags : [], mergedInputTags)
       };
 
       chrome.storage.local.set({ bookmarks }, () => {

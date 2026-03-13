@@ -7,7 +7,7 @@
     body {
       font-family: Arial, sans-serif;
       padding: 20px;
-      max-width: 1000px;
+      max-width: 1200px;
       margin: 0 auto;
       background: #f7f7f7;
     }
@@ -20,6 +20,13 @@
       margin-bottom: 20px;
     }
 
+    .toolbar-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
     input {
       width: 100%;
       padding: 10px;
@@ -29,12 +36,278 @@
       box-sizing: border-box;
     }
 
+    .org-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+
+    .control-group label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 6px;
+    }
+
+    .control-group select,
+    .control-group input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 13px;
+    }
+
+    .manager-layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .sidebar {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      position: sticky;
+      top: 12px;
+    }
+
+    .sidebar h2,
+    .content h2 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+    }
+
+    .folder-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .folder-tree {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .folder-root,
+    .folder-child,
+    .folder-all-btn {
+      border: 1px solid #d7d7d7;
+      border-radius: 6px;
+      background: white;
+      color: #333;
+      cursor: pointer;
+      font-size: 13px;
+      text-align: left;
+      width: 100%;
+      padding: 8px 10px;
+    }
+
+    .folder-root.active,
+    .folder-child.active,
+    .folder-all-btn.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-weight: bold;
+    }
+
+    .folder-children {
+      display: none;
+      margin-left: 10px;
+      border-left: 2px solid #ececec;
+      padding-left: 8px;
+      gap: 6px;
+    }
+
+    .folder-children.open {
+      display: grid;
+    }
+
+    .folder-rename {
+      display: grid;
+      gap: 8px;
+      border-top: 1px dashed #ddd;
+      padding-top: 10px;
+    }
+
+    .folder-rename label {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .folder-rename input {
+      padding: 8px;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+
+    .folder-rename button {
+      border: none;
+      border-radius: 6px;
+      background: #ff9800;
+      color: white;
+      font-size: 13px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
+    .folder-rename button:disabled {
+      background: #c7c7c7;
+      cursor: not-allowed;
+    }
+
+    .content {
+      min-width: 0;
+    }
+
+    .tag-filter-panel {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .tag-filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag-filter-btn {
+      border: 1px solid #d7d7d7;
+      border-radius: 999px;
+      background: white;
+      color: #333;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 6px 10px;
+    }
+
+    .tag-filter-btn.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-weight: bold;
+    }
+
+    .bookmarks-panel {
+      background: transparent;
+    }
+
+    .folder-create {
+      display: grid;
+      gap: 8px;
+    }
+
+    .folder-create button {
+      border: none;
+      border-radius: 6px;
+      padding: 9px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #5c6bc0;
+      color: white;
+    }
+
+    .import-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .import-actions button {
+      border: none;
+      border-radius: 6px;
+      padding: 9px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #009688;
+      color: white;
+    }
+
+    .import-status {
+      font-size: 12px;
+      color: #555;
+      min-height: 16px;
+    }
+
+    .view-menu {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .time-view-control {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .time-view-control span {
+      font-size: 13px;
+      color: #666;
+      white-space: nowrap;
+    }
+
+    .time-view-control select {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      background: white;
+    }
+
+    .view-menu span {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .view-btn {
+      border: 1px solid #bbb;
+      border-radius: 6px;
+      background: white;
+      color: #333;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .view-btn.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-weight: bold;
+    }
+
+    #bookmarkList.card-view {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
     .bookmark-item {
       background: white;
       border: 1px solid #ddd;
       padding: 14px;
       border-radius: 8px;
       margin-bottom: 12px;
+    }
+
+    #bookmarkList.card-view .bookmark-item {
+      margin-bottom: 0;
     }
 
     .bookmark-title {
@@ -91,6 +364,32 @@
       color: white;
     }
 
+    .folder-editor {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .folder-editor select {
+      flex: 1;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 13px;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+
+    .folder-editor button {
+      width: auto;
+      margin-bottom: 0;
+      padding: 8px 10px;
+      background: #5c6bc0;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
     .actions button {
       margin-right: 8px;
       padding: 8px 10px;
@@ -112,16 +411,134 @@
       color: #666;
       margin-top: 20px;
     }
+
+    .bookmark-card .bookmark-title {
+      font-size: 16px;
+      margin-bottom: 10px;
+      min-height: 38px;
+      overflow: hidden;
+    }
+
+    .bookmark-card .actions {
+      margin-top: 10px;
+    }
+
+    .card-tag-input-wrap {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .add-tag-btn {
+      border: none;
+      border-radius: 999px;
+      width: 26px;
+      height: 26px;
+      line-height: 26px;
+      text-align: center;
+      cursor: pointer;
+      background: #1a73e8;
+      color: white;
+      font-size: 16px;
+      padding: 0;
+    }
+
+    .card-tag-input {
+      display: none;
+      width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+
+    .card-tag-input.open {
+      display: block;
+    }
+
+    .bookmark-card .folder-editor {
+      margin-top: 8px;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 960px) {
+      .manager-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+    }
   </style>
 </head>
 <body>
   <h1>Quan ly Bookmark</h1>
 
   <div class="toolbar">
-    <input id="searchInput" type="text" placeholder="Tim theo tieu de, URL hoac tag..." />
+    <div class="toolbar-row">
+      <input id="searchInput" type="text" placeholder="Tim theo tieu de, URL hoac tag..." />
+      <div class="time-view-control">
+        <span>Created:</span>
+        <select id="createdViewSelect">
+          <option value="newest">Moi nhat</option>
+          <option value="oldest">Cu nhat</option>
+          <option value="today">Hom nay</option>
+          <option value="last7">7 ngay qua</option>
+          <option value="last30">30 ngay qua</option>
+        </select>
+      </div>
+      <div class="view-menu">
+        <span>View:</span>
+        <button id="listViewBtn" class="view-btn active" data-view-mode="list" type="button">List</button>
+        <button id="cardViewBtn" class="view-btn" data-view-mode="card" type="button">Card</button>
+      </div>
+    </div>
   </div>
 
-  <div id="bookmarkList"></div>
+  <div class="org-panel">
+    <div class="control-group folder-create">
+      <label for="newFolderName">Tao folder / subfolder</label>
+      <input id="newFolderName" type="text" placeholder="Ten folder moi..." />
+      <select id="folderParentSelect"></select>
+      <button id="createFolderBtn" type="button">Tao folder</button>
+    </div>
+    <div class="control-group import-actions">
+      <label for="importFileInput">Import Chrome bookmark (.html)</label>
+      <input id="importFileInput" type="file" accept=".html,text/html" />
+      <button id="importBtn" type="button">Import bookmark</button>
+      <div id="importStatus" class="import-status"></div>
+    </div>
+  </div>
+
+  <div class="manager-layout">
+    <aside class="sidebar">
+      <h2>Folder</h2>
+      <div class="folder-actions">
+        <button id="folderAllBtn" class="folder-all-btn active" type="button" data-folder-id="__all">Tat ca folder</button>
+        <button id="folderNoneBtn" class="folder-all-btn" type="button" data-folder-id="__none">Chua gan folder</button>
+      </div>
+      <div id="folderTree" class="folder-tree"></div>
+      <div class="folder-rename">
+        <label for="renameFolderInput">Sua ten folder dang chon</label>
+        <input id="renameFolderInput" type="text" placeholder="Chon folder de doi ten..." />
+        <button id="renameFolderBtn" type="button" disabled>Sua ten folder</button>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div class="tag-filter-panel">
+        <h2>Tag Filter</h2>
+        <div id="tagFilterChips" class="tag-filter-chips"></div>
+      </div>
+
+      <div class="bookmarks-panel">
+        <div id="bookmarkList"></div>
+      </div>
+    </section>
+  </div>
 
   <script src="manager.js"></script>
 </body>
