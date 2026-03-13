@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Trang quan ly Bookmark</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+      background: #f7f7f7;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    .toolbar {
+      margin-bottom: 20px;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+
+    .bookmark-item {
+      background: white;
+      border: 1px solid #ddd;
+      padding: 14px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    .bookmark-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .bookmark-url {
+      font-size: 13px;
+      color: #555;
+      word-break: break-all;
+      margin-bottom: 8px;
+    }
+
+    .bookmark-meta {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .tag-chip {
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-size: 12px;
+      border-radius: 999px;
+      padding: 4px 8px;
+    }
+
+    .tag-editor {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .tag-editor input {
+      flex: 1;
+      padding: 8px;
+      font-size: 13px;
+    }
+
+    .tag-editor button {
+      width: auto;
+      margin-bottom: 0;
+      padding: 8px 10px;
+      background: #ff9800;
+      color: white;
+    }
+
+    .actions button {
+      margin-right: 8px;
+      padding: 8px 10px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: white;
+    }
+
+    .open-btn {
+      background: #4caf50;
+    }
+
+    .delete-btn {
+      background: #e74c3c;
+    }
+
+    .empty {
+      color: #666;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Quan ly Bookmark</h1>
+
+  <div class="toolbar">
+    <input id="searchInput" type="text" placeholder="Tim theo tieu de, URL hoac tag..." />
+  </div>
+
+  <div id="bookmarkList"></div>
+
+  <script src="manager.js"></script>
+</body>
+</html>
