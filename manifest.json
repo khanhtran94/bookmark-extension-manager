@@ -7,6 +7,9 @@
   "background": {
     "service_worker": "background.js"
   },
+  "chrome_url_overrides": {
+    "newtab": "manager.html"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "Bookmark Manager"
