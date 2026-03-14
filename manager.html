@@ -6,9 +6,11 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      padding: 20px;
-      max-width: 1200px;
-      margin: 0 auto;
+      padding: 14px 18px;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      box-sizing: border-box;
       background: #f7f7f7;
     }
 
@@ -66,7 +68,7 @@
 
     .manager-layout {
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr) 280px;
+      grid-template-columns: clamp(220px, 18vw, 300px) minmax(0, 1fr) clamp(220px, 18vw, 300px);
       gap: 16px;
       align-items: start;
     }
@@ -79,6 +81,10 @@
       padding: 12px;
       position: sticky;
       top: 12px;
+      max-height: calc(100vh - 24px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .sidebar h2,
@@ -99,6 +105,10 @@
       display: grid;
       gap: 6px;
       margin-bottom: 12px;
+      overflow-y: auto;
+      padding-right: 4px;
+      flex: 1;
+      min-height: 180px;
     }
 
     .folder-root,
@@ -178,6 +188,11 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+      overflow-y: auto;
+      padding-right: 4px;
+      align-content: flex-start;
+      min-height: 180px;
+      flex: 1;
     }
 
     .tag-filter-btn {
@@ -373,7 +388,7 @@
 
     #bookmarkList.card-view {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
       gap: 12px;
     }
 
@@ -550,6 +565,12 @@
       .sidebar,
       .tag-sidebar {
         position: static;
+        max-height: none;
+      }
+
+      .folder-tree,
+      .tag-filter-chips {
+        max-height: none;
       }
     }
   </style>
