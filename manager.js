@@ -11,6 +11,7 @@ const newFolderNameInput = document.getElementById("newFolderName");
 const createFolderBtn = document.getElementById("createFolderBtn");
 const renameFolderInput = document.getElementById("renameFolderInput");
 const renameFolderBtn = document.getElementById("renameFolderBtn");
+const deleteFolderBtn = document.getElementById("deleteFolderBtn");
 const importFileInput = document.getElementById("importFileInput");
 const importBtn = document.getElementById("importBtn");
 const importStatus = document.getElementById("importStatus");
@@ -494,6 +495,9 @@ function syncRenameFolderState() {
   const canRename = Boolean(selectedFolder);
 
   renameFolderBtn.disabled = !canRename;
+  if (deleteFolderBtn) {
+    deleteFolderBtn.disabled = !canRename;
+  }
   if (!canRename) {
     renameFolderInput.value = "";
     renameFolderInput.placeholder = "Chon folder de doi ten...";
@@ -1095,6 +1099,39 @@ function renameSelectedFolder() {
   renderAllControls();
 }
 
+async function deleteSelectedFolder() {
+  const selectedFolder = currentFolders.find((folder) => folder.id === selectedFolderFilter);
+  if (!selectedFolder) {
+    return;
+  }
+
+  const folderIdsToDelete = getDescendantFolderIds(selectedFolder.id);
+  const bookmarkCount = currentBookmarks.filter((bookmark) => folderIdsToDelete.has(bookmark.folderId)).length;
+  const folderCount = folderIdsToDelete.size;
+
+  const confirmed = window.confirm(
+    `Xoa folder "${selectedFolder.name}" va ${folderCount - 1} subfolder.\n` +
+    `Se xoa ${bookmarkCount} bookmark trong nhom folder nay.\nBan chac chan?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  currentFolders = currentFolders.filter((folder) => !folderIdsToDelete.has(folder.id));
+  currentBookmarks = currentBookmarks.filter((bookmark) => !folderIdsToDelete.has(bookmark.folderId));
+
+  selectedFolderFilter = FILTER_ALL;
+  expandedRootFolderId = "";
+  resetToFirstPage();
+
+  if (window.BookmarkDB) {
+    await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
+  }
+
+  renderAllControls();
+}
+
 async function importChromeBookmarks() {
   const file = importFileInput.files && importFileInput.files[0];
   if (!file) {
@@ -1215,6 +1252,11 @@ newFolderNameInput.addEventListener("keydown", (e) => {
 });
 
 renameFolderBtn.addEventListener("click", renameSelectedFolder);
+if (deleteFolderBtn) {
+  deleteFolderBtn.addEventListener("click", () => {
+    deleteSelectedFolder();
+  });
+}
 
 renameFolderInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
