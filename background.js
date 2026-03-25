@@ -104,6 +104,9 @@ function setTabIcon(tabId, isBookmarked) {
       16: createIconImageData(isBookmarked, 16),
       32: createIconImageData(isBookmarked, 32)
     }
+  }, () => {
+    // Tab can be closed while async check is running. Ignore this expected race.
+    void chrome.runtime.lastError;
   });
 }
 
@@ -124,6 +127,9 @@ async function updateIconForTab(tab) {
 
 function refreshActiveTabIcon(windowId) {
   chrome.tabs.query({ active: true, windowId }, (tabs) => {
+    if (chrome.runtime.lastError) {
+      return;
+    }
     if (!tabs || !tabs.length) {
       return;
     }

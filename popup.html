@@ -68,7 +68,14 @@
 
   <div class="field">
     <label for="tagsInput">Tag (phan cach bang dau phay)</label>
-    <input id="tagsInput" type="text" placeholder="vd: cong-viec, javascript" />
+    <input id="tagsInput" type="text" placeholder="vd: cong-viec, javascript" list="tagSuggestions" />
+    <datalist id="tagSuggestions"></datalist>
+  </div>
+
+  <div class="field">
+    <label for="folderInput">Folder</label>
+    <input id="folderInput" type="text" placeholder="Nhap de goi y folder..." list="folderSuggestions" />
+    <datalist id="folderSuggestions"></datalist>
   </div>
 
   <button id="saveBtn">Luu tab hien tai</button>
