@@ -104,42 +104,17 @@ function notifyBookmarkUpdated(url) {
 }
 
 function buildFolderPathEntries(folders) {
-  const childrenMap = new Map();
-
-  folders.forEach((folder) => {
-    const parentId = String(folder.parentId || "").trim();
-    if (!childrenMap.has(parentId)) {
-      childrenMap.set(parentId, []);
-    }
-    childrenMap.get(parentId).push(folder);
-  });
-
-  childrenMap.forEach((children) => {
-    children.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "vi"));
-  });
-
-  const entries = [];
-
-  function walk(parentId, pathSegments) {
-    const children = childrenMap.get(parentId) || [];
-    children.forEach((child) => {
-      const childName = String(child.name || "").trim();
-      if (!childName) {
-        return;
-      }
-
-      const nextSegments = [...pathSegments, childName];
-      entries.push({
-        id: String(child.id || "").trim(),
-        name: childName,
-        path: nextSegments.join(" / ")
-      });
-      walk(String(child.id || "").trim(), nextSegments);
-    });
-  }
-
-  walk("", []);
-  return entries;
+  return (folders || [])
+    .map((folder) => {
+      const name = String(folder.name || "").trim();
+      return {
+        id: String(folder.id || "").trim(),
+        name,
+        path: name
+      };
+    })
+    .filter((entry) => entry.id && entry.name)
+    .sort((a, b) => a.name.localeCompare(b.name, "vi"));
 }
 
 function updateTagSuggestions() {
