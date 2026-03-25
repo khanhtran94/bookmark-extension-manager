@@ -6,7 +6,6 @@ const folderTree = document.getElementById("folderTree");
 const folderAllBtn = document.getElementById("folderAllBtn");
 const folderNoneBtn = document.getElementById("folderNoneBtn");
 const tagFilterChips = document.getElementById("tagFilterChips");
-const folderParentSelect = document.getElementById("folderParentSelect");
 const newFolderNameInput = document.getElementById("newFolderName");
 const createFolderBtn = document.getElementById("createFolderBtn");
 const renameFolderInput = document.getElementById("renameFolderInput");
@@ -42,7 +41,6 @@ let selectedFolderFilter = FILTER_ALL;
 let selectedTagFilter = FILTER_ALL;
 let selectedViewTab = FILTER_ALL;
 let customViewTabs = [];
-let expandedRootFolderId = "";
 let searchDebounceTimer = null;
 let currentPage = 1;
 
@@ -208,6 +206,32 @@ function normalizeFolder(folder) {
   };
 }
 
+function flattenFoldersSingleLevel(folders) {
+  const unique = [];
+  const nameToId = {};
+  const oldToFlatId = {};
+
+  folders.forEach((folder) => {
+    const key = folder.name.trim().toLowerCase();
+    if (!key) {
+      return;
+    }
+
+    if (!nameToId[key]) {
+      nameToId[key] = folder.id;
+      unique.push({
+        ...folder,
+        parentId: ""
+      });
+    }
+
+    oldToFlatId[folder.id] = nameToId[key];
+  });
+
+  unique.sort((a, b) => a.name.localeCompare(b.name));
+  return { folders: unique, oldToFlatId };
+}
+
 function getLegacyFolderNameFromBookmark(bookmark, folderNameMap = {}) {
   const idBasedName = folderNameMap[String(bookmark.folderId || "").trim()];
   if (idBasedName) {
@@ -277,25 +301,10 @@ function getFolderNameMap(folders) {
   }, {});
 }
 
-function getChildrenFolders(parentId = "") {
-  return currentFolders
-    .filter((folder) => (folder.parentId || "") === parentId)
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
 function getOrderedFoldersForSelect() {
-  const ordered = [];
-
-  function walk(parentId, depth) {
-    const children = getChildrenFolders(parentId);
-    children.forEach((folder) => {
-      ordered.push({ ...folder, depth });
-      walk(folder.id, depth + 1);
-    });
-  }
-
-  walk("", 0);
-  return ordered;
+  return [...currentFolders]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((folder) => ({ ...folder, depth: 0 }));
 }
 
 function ensureFolderPath(pathNames, folders) {
@@ -303,33 +312,24 @@ function ensureFolderPath(pathNames, folders) {
     return "";
   }
 
-  let parentId = "";
-  pathNames
-    .map((name) => String(name || "").trim())
-    .filter(Boolean)
-    .forEach((folderName) => {
-      const existing = folders.find(
-        (folder) =>
-          (folder.parentId || "") === parentId &&
-          folder.name.toLowerCase() === folderName.toLowerCase()
-      );
+  const folderName = String(pathNames[pathNames.length - 1] || "").trim();
+  if (!folderName) {
+    return "";
+  }
 
-      if (existing) {
-        parentId = existing.id;
-        return;
-      }
+  const existing = folders.find((folder) => folder.name.toLowerCase() === folderName.toLowerCase());
+  if (existing) {
+    return existing.id;
+  }
 
-      const newFolder = {
-        id: createUniqueId(),
-        name: folderName,
-        parentId,
-        createdAt: Date.now()
-      };
-      folders.push(newFolder);
-      parentId = newFolder.id;
-    });
-
-  return parentId;
+  const newFolder = {
+    id: createUniqueId(),
+    name: folderName,
+    parentId: "",
+    createdAt: Date.now()
+  };
+  folders.push(newFolder);
+  return newFolder.id;
 }
 
 function parseChromeBookmarksHtml(htmlText) {
@@ -455,34 +455,11 @@ function parseChromeBookmarksHtml(htmlText) {
 }
 
 function getDescendantFolderIds(rootId) {
-  const ids = new Set([rootId]);
-  const queue = [rootId];
-
-  while (queue.length) {
-    const currentId = queue.shift();
-    currentFolders.forEach((folder) => {
-      if (folder.parentId === currentId && !ids.has(folder.id)) {
-        ids.add(folder.id);
-        queue.push(folder.id);
-      }
-    });
-  }
-
-  return ids;
+  return new Set([rootId]);
 }
 
 function renderFolderParentOptions() {
-  const selectedParent = folderParentSelect.value || "";
-  const orderedFolders = getOrderedFoldersForSelect();
-
-  folderParentSelect.innerHTML = `
-    <option value="">(Root folder)</option>
-    ${orderedFolders
-      .map((folder) => `<option value="${folder.id}">${"  ".repeat(folder.depth)}${folder.name}</option>`)
-      .join("")}
-  `;
-
-  folderParentSelect.value = orderedFolders.some((folder) => folder.id === selectedParent) ? selectedParent : "";
+  // Folder hierarchy is disabled; keep this as no-op for compatibility.
 }
 
 function renderFolderFilterButtons() {
@@ -509,51 +486,22 @@ function syncRenameFolderState() {
 }
 
 function renderFolderTree() {
-  const rootFolders = getChildrenFolders("");
+  const flatFolders = [...currentFolders].sort((a, b) => a.name.localeCompare(b.name));
   const selectedFolderExists = currentFolders.some((folder) => folder.id === selectedFolderFilter);
 
   if (!selectedFolderExists && selectedFolderFilter !== FILTER_ALL && selectedFolderFilter !== FILTER_NONE) {
     selectedFolderFilter = FILTER_ALL;
   }
 
-  if (selectedFolderExists) {
-    const selectedFolder = currentFolders.find((folder) => folder.id === selectedFolderFilter);
-    if (selectedFolder && selectedFolder.parentId) {
-      expandedRootFolderId = selectedFolder.parentId;
-    } else if (selectedFolder && !selectedFolder.parentId) {
-      expandedRootFolderId = selectedFolder.id;
-    }
-  }
-
   folderTree.innerHTML = "";
 
-  rootFolders.forEach((rootFolder) => {
-    const rootButton = document.createElement("button");
-    rootButton.type = "button";
-    rootButton.className = `folder-root ${selectedFolderFilter === rootFolder.id ? "active" : ""}`;
-    rootButton.setAttribute("data-folder-id", rootFolder.id);
-    rootButton.setAttribute("data-folder-role", "root");
-    rootButton.textContent = rootFolder.name;
-
-    const childrenContainer = document.createElement("div");
-    childrenContainer.className = `folder-children ${expandedRootFolderId === rootFolder.id ? "open" : ""}`;
-
-    const childFolders = getChildrenFolders(rootFolder.id);
-    childFolders.forEach((childFolder) => {
-      const childButton = document.createElement("button");
-      childButton.type = "button";
-      childButton.className = `folder-child ${selectedFolderFilter === childFolder.id ? "active" : ""}`;
-      childButton.setAttribute("data-folder-id", childFolder.id);
-      childButton.setAttribute("data-folder-role", "child");
-      childButton.setAttribute("data-parent-id", rootFolder.id);
-      childButton.textContent = childFolder.name;
-      childrenContainer.appendChild(childButton);
-    });
-
-    folderTree.appendChild(rootButton);
-    if (childFolders.length) {
-      folderTree.appendChild(childrenContainer);
-    }
+  flatFolders.forEach((folder) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `folder-root ${selectedFolderFilter === folder.id ? "active" : ""}`;
+    button.setAttribute("data-folder-id", folder.id);
+    button.textContent = folder.name;
+    folderTree.appendChild(button);
   });
 
   renderFolderFilterButtons();
@@ -883,16 +831,21 @@ async function reloadData() {
   const rawFolders = await BookmarkDB.getAllFolders();
 
   const normalizedFolders = rawFolders.map(normalizeFolder).filter((folder) => folder.id && folder.name);
-  const folderLookup = buildFolderLookup(normalizedFolders);
+  const { folders: flatFolders, oldToFlatId } = flattenFoldersSingleLevel(normalizedFolders);
+  const folderLookup = buildFolderLookup(flatFolders);
   const normalizedBookmarks = rawBookmarks
     .map(normalizeBookmark)
     .map((bookmark) => ({
       ...bookmark,
-      folderId: resolveFolderIdForBookmark(bookmark, folderLookup)
+      folderId: oldToFlatId[String(bookmark.folderId || "").trim()] || resolveFolderIdForBookmark(bookmark, folderLookup)
     }));
 
-  currentFolders = normalizedFolders;
+  currentFolders = flatFolders;
   currentBookmarks = normalizedBookmarks;
+
+  if (window.BookmarkDB) {
+    await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
+  }
 
   renderAllControls();
 }
@@ -1042,21 +995,20 @@ function openBookmark(id, url) {
 
 function createFolder() {
   const name = newFolderNameInput.value.trim();
-  const parentId = folderParentSelect.value || "";
 
   if (!name) {
     return;
   }
 
-  const parentExists = !parentId || currentFolders.some((folder) => folder.id === parentId);
-  if (!parentExists) {
+  const exists = currentFolders.some((folder) => folder.name.toLowerCase() === name.toLowerCase());
+  if (exists) {
     return;
   }
 
   const newFolder = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name,
-    parentId,
+    parentId: "",
     createdAt: Date.now()
   };
 
@@ -1065,7 +1017,6 @@ function createFolder() {
     BookmarkDB.putFolder(newFolder);
   }
   newFolderNameInput.value = "";
-  folderParentSelect.value = "";
   renderAllControls();
 }
 
@@ -1107,11 +1058,10 @@ async function deleteSelectedFolder() {
 
   const folderIdsToDelete = getDescendantFolderIds(selectedFolder.id);
   const bookmarkCount = currentBookmarks.filter((bookmark) => folderIdsToDelete.has(bookmark.folderId)).length;
-  const folderCount = folderIdsToDelete.size;
 
   const confirmed = window.confirm(
-    `Xoa folder "${selectedFolder.name}" va ${folderCount - 1} subfolder.\n` +
-    `Se xoa ${bookmarkCount} bookmark trong nhom folder nay.\nBan chac chan?`
+    `Xoa folder "${selectedFolder.name}".\n` +
+    `Se xoa ${bookmarkCount} bookmark trong folder nay.\nBan chac chan?`
   );
 
   if (!confirmed) {
@@ -1122,7 +1072,6 @@ async function deleteSelectedFolder() {
   currentBookmarks = currentBookmarks.filter((bookmark) => !folderIdsToDelete.has(bookmark.folderId));
 
   selectedFolderFilter = FILTER_ALL;
-  expandedRootFolderId = "";
   resetToFirstPage();
 
   if (window.BookmarkDB) {
@@ -1199,8 +1148,17 @@ async function importChromeBookmarks() {
       insertedCount += 1;
     });
 
-    currentFolders = workingFolders.map(normalizeFolder);
-    currentBookmarks = workingBookmarks.map(normalizeBookmark);
+    const normalizedWorkingFolders = workingFolders.map(normalizeFolder).filter((folder) => folder.id && folder.name);
+    const { folders: flatFolders, oldToFlatId } = flattenFoldersSingleLevel(normalizedWorkingFolders);
+    const folderLookup = buildFolderLookup(flatFolders);
+
+    currentFolders = flatFolders;
+    currentBookmarks = workingBookmarks
+      .map(normalizeBookmark)
+      .map((bookmark) => ({
+        ...bookmark,
+        folderId: oldToFlatId[String(bookmark.folderId || "").trim()] || resolveFolderIdForBookmark(bookmark, folderLookup)
+      }));
 
     if (window.BookmarkDB) {
       await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
@@ -1296,44 +1254,19 @@ folderTree.addEventListener("click", (e) => {
     return;
   }
 
-  const role = target.getAttribute("data-folder-role");
-  if (role === "root") {
-    resetSecondaryFiltersForFolderView();
-    if (selectedFolderFilter === folderId) {
-      selectedFolderFilter = FILTER_ALL;
-      expandedRootFolderId = "";
-      resetToFirstPage();
-      renderFolderTree();
-      renderBookmarks();
-      return;
-    }
-
-    expandedRootFolderId = expandedRootFolderId === folderId ? "" : folderId;
-    selectedFolderFilter = folderId;
+  resetSecondaryFiltersForFolderView();
+  if (selectedFolderFilter === folderId) {
+    selectedFolderFilter = FILTER_ALL;
     resetToFirstPage();
     renderFolderTree();
     renderBookmarks();
     return;
   }
 
-  if (role === "child") {
-    resetSecondaryFiltersForFolderView();
-    if (selectedFolderFilter === folderId) {
-      selectedFolderFilter = FILTER_ALL;
-      expandedRootFolderId = "";
-      resetToFirstPage();
-      renderFolderTree();
-      renderBookmarks();
-      return;
-    }
-
-    const parentId = target.getAttribute("data-parent-id") || "";
-    expandedRootFolderId = parentId;
-    selectedFolderFilter = folderId;
-    resetToFirstPage();
-    renderFolderTree();
-    renderBookmarks();
-  }
+  selectedFolderFilter = folderId;
+  resetToFirstPage();
+  renderFolderTree();
+  renderBookmarks();
 });
 
 tagFilterChips.addEventListener("click", (e) => {
