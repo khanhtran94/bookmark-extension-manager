@@ -341,6 +341,27 @@
       min-height: 16px;
     }
 
+    .backup-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .backup-actions button {
+      border: none;
+      border-radius: 6px;
+      padding: 9px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #607d8b;
+      color: white;
+    }
+
+    .backup-status {
+      font-size: 12px;
+      color: #555;
+      min-height: 16px;
+    }
+
     .view-menu {
       display: flex;
       gap: 8px;
@@ -614,6 +635,13 @@
       <input id="importFileInput" type="file" accept=".html,text/html" />
       <button id="importBtn" type="button">Import bookmark</button>
       <div id="importStatus" class="import-status"></div>
+    </div>
+    <div class="control-group backup-actions">
+      <label for="backupImportFileInput">Backup data (.json)</label>
+      <button id="exportBackupBtn" type="button">Export backup</button>
+      <input id="backupImportFileInput" type="file" accept=".json,application/json" />
+      <button id="importBackupBtn" type="button">Import backup</button>
+      <div id="backupStatus" class="backup-status"></div>
     </div>
   </div>
 
