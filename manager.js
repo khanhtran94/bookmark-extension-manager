@@ -14,6 +14,10 @@ const deleteFolderBtn = document.getElementById("deleteFolderBtn");
 const importFileInput = document.getElementById("importFileInput");
 const importBtn = document.getElementById("importBtn");
 const importStatus = document.getElementById("importStatus");
+const exportBackupBtn = document.getElementById("exportBackupBtn");
+const backupImportFileInput = document.getElementById("backupImportFileInput");
+const importBackupBtn = document.getElementById("importBackupBtn");
+const backupStatus = document.getElementById("backupStatus");
 const prevPageBtn = document.getElementById("prevPageBtn");
 const nextPageBtn = document.getElementById("nextPageBtn");
 const pageInfo = document.getElementById("pageInfo");
@@ -186,6 +190,20 @@ function createUniqueId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function formatBackupTimestamp(timestamp = Date.now()) {
+  const date = new Date(timestamp);
+  const pad = (value) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds())
+  ].join("");
+}
+
 function normalizeBookmark(bookmark) {
   return {
     ...bookmark,
@@ -230,6 +248,31 @@ function flattenFoldersSingleLevel(folders) {
 
   unique.sort((a, b) => a.name.localeCompare(b.name));
   return { folders: unique, oldToFlatId };
+}
+
+function buildSingleLevelState(bookmarks, folders) {
+  const normalizedFolders = (folders || []).map(normalizeFolder).filter((folder) => folder.id && folder.name);
+  const { folders: flatFolders, oldToFlatId } = flattenFoldersSingleLevel(normalizedFolders);
+  const folderLookup = buildFolderLookup(flatFolders);
+
+  const normalizedBookmarks = (bookmarks || [])
+    .map(normalizeBookmark)
+    .map((bookmark) => {
+      const mappedFolderId = oldToFlatId[String(bookmark.folderId || "").trim()];
+      const resolvedFolderId = mappedFolderId || resolveFolderIdForBookmark(bookmark, folderLookup);
+      return {
+        ...bookmark,
+        id: String(bookmark.id || createUniqueId()),
+        url: String(bookmark.url || "").trim(),
+        folderId: resolvedFolderId
+      };
+    })
+    .filter((bookmark) => bookmark.url);
+
+  return {
+    bookmarks: normalizedBookmarks,
+    folders: flatFolders
+  };
 }
 
 function getLegacyFolderNameFromBookmark(bookmark, folderNameMap = {}) {
@@ -1148,17 +1191,9 @@ async function importChromeBookmarks() {
       insertedCount += 1;
     });
 
-    const normalizedWorkingFolders = workingFolders.map(normalizeFolder).filter((folder) => folder.id && folder.name);
-    const { folders: flatFolders, oldToFlatId } = flattenFoldersSingleLevel(normalizedWorkingFolders);
-    const folderLookup = buildFolderLookup(flatFolders);
-
-    currentFolders = flatFolders;
-    currentBookmarks = workingBookmarks
-      .map(normalizeBookmark)
-      .map((bookmark) => ({
-        ...bookmark,
-        folderId: oldToFlatId[String(bookmark.folderId || "").trim()] || resolveFolderIdForBookmark(bookmark, folderLookup)
-      }));
+    const nextState = buildSingleLevelState(workingBookmarks, workingFolders);
+    currentFolders = nextState.folders;
+    currentBookmarks = nextState.bookmarks;
 
     if (window.BookmarkDB) {
       await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
@@ -1169,6 +1204,92 @@ async function importChromeBookmarks() {
     importFileInput.value = "";
   } catch (error) {
     importStatus.textContent = "Import that bai. Kiem tra lai file bookmarks.html.";
+  }
+}
+
+async function exportBackupData() {
+  try {
+    backupStatus.textContent = "Dang tao file backup...";
+
+    const nextState = buildSingleLevelState(currentBookmarks, currentFolders);
+    const uniqueTabs = Array.from(
+      new Set(
+        (customViewTabs || [])
+          .map((tab) => normalizeViewTabName(tab))
+          .filter(Boolean)
+      )
+    );
+
+    const payload = {
+      format: "bookmark-manager-backup",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {
+        bookmarks: nextState.bookmarks,
+        folders: nextState.folders,
+        customViewTabs: uniqueTabs
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `bookmark-backup-${formatBackupTimestamp()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+
+    backupStatus.textContent = `Da export backup: ${nextState.bookmarks.length} bookmark, ${nextState.folders.length} folder.`;
+  } catch (error) {
+    backupStatus.textContent = "Export backup that bai.";
+  }
+}
+
+async function importBackupData() {
+  const file = backupImportFileInput.files && backupImportFileInput.files[0];
+  if (!file) {
+    backupStatus.textContent = "Hay chon file backup .json.";
+    return;
+  }
+
+  try {
+    backupStatus.textContent = "Dang import backup...";
+    const rawText = await file.text();
+    const parsed = JSON.parse(rawText);
+
+    const fallbackData = parsed && typeof parsed === "object" ? parsed : {};
+    const dataNode = parsed && parsed.data && typeof parsed.data === "object" ? parsed.data : fallbackData;
+    const incomingBookmarks = Array.isArray(dataNode.bookmarks) ? dataNode.bookmarks : [];
+    const incomingFolders = Array.isArray(dataNode.folders) ? dataNode.folders : [];
+    const incomingTabs = Array.isArray(dataNode.customViewTabs) ? dataNode.customViewTabs : [];
+
+    const nextState = buildSingleLevelState(incomingBookmarks, incomingFolders);
+
+    currentFolders = nextState.folders;
+    currentBookmarks = nextState.bookmarks;
+    customViewTabs = Array.from(
+      new Set(incomingTabs.map((tab) => normalizeViewTabName(tab)).filter(Boolean))
+    );
+    persistCustomViewTabs();
+    if (selectedViewTab !== FILTER_ALL) {
+      const hasSelectedTab = customViewTabs.some((tab) => tab.toLowerCase() === selectedViewTab.toLowerCase());
+      if (!hasSelectedTab) {
+        selectedViewTab = FILTER_ALL;
+      }
+    }
+
+    if (window.BookmarkDB) {
+      await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
+    }
+
+    resetToFirstPage();
+    renderAllControls();
+    backupStatus.textContent = `Import backup xong: ${currentBookmarks.length} bookmark, ${currentFolders.length} folder.`;
+    backupImportFileInput.value = "";
+  } catch (error) {
+    backupStatus.textContent = "Import backup that bai. Kiem tra file .json hop le.";
   }
 }
 
@@ -1226,6 +1347,17 @@ importBtn.addEventListener("click", importChromeBookmarks);
 importFileInput.addEventListener("change", () => {
   importStatus.textContent = "";
 });
+if (exportBackupBtn) {
+  exportBackupBtn.addEventListener("click", exportBackupData);
+}
+if (importBackupBtn) {
+  importBackupBtn.addEventListener("click", importBackupData);
+}
+if (backupImportFileInput) {
+  backupImportFileInput.addEventListener("change", () => {
+    backupStatus.textContent = "";
+  });
+}
 
 folderAllBtn.addEventListener("click", () => {
   resetSecondaryFiltersForFolderView();
