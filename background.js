@@ -1,21 +1,9 @@
-const DB_NAME = "bookmark_manager_db";
-const DB_VERSION = 1;
+importScripts('bookmark-db.js', 'sheets-model.js', 'sheets-sync.js');
+
 const BOOKMARKS_STORE = "bookmarks";
 
-let dbPromise = null;
-
 function openDB() {
-  if (dbPromise) {
-    return dbPromise;
-  }
-
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Unable to open IndexedDB"));
-  });
-
-  return dbPromise;
+  return BookmarkDB.init();
 }
 
 function queryByUrl(url) {

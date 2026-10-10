@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><title>Thiết lập Google Sheets</title>
+<style>body{font:16px/1.65 system-ui;max-width:850px;margin:40px auto;padding:0 24px;color:#203040}code,pre{background:#eef2f6;padding:3px 6px}pre{padding:16px;overflow:auto}li{margin:12px 0}a{color:#145bbb}</style></head>
+<body>
+<h1>Lưu bookmark lên Google Sheets</h1>
+<p>Cần thiết lập một lần bằng tài khoản Google của bạn. Không cần server hay client secret.</p>
+<ol>
+<li>Tạo bảng tính trống tại <a href="https://sheets.new" target="_blank" rel="noopener">Google Sheets</a>, đặt tên “Bookmark Manager”. Giữ quyền chia sẻ riêng tư. Sao chép URL.</li>
+<li>Mở <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, tạo hoặc chọn project. Trong APIs &amp; Services → Library, bật <strong>Google Sheets API</strong>.</li>
+<li>Trong Google Auth Platform, cấu hình Branding (tên ứng dụng, email hỗ trợ), Audience (External nếu dùng Gmail cá nhân). Khi ứng dụng ở Testing, thêm email của bạn vào Test users. Trong Data Access, thêm scope <code>https://www.googleapis.com/auth/spreadsheets</code>. Quyền này cho phép truy cập bảng tính của tài khoản; mã extension chỉ gọi Sheet bạn cấu hình.</li>
+<li>Mở <code>chrome://extensions</code>, bật Developer mode, sao chép ID của Bookmark Manager. Giữ nguyên thư mục extension để tránh đổi ID. Khi dùng trên máy khác, cần giữ ID ổn định bằng manifest key hoặc cấu hình OAuth tương ứng với ID máy đó; xem tài liệu Chrome bên dưới.</li>
+<li>Trong Google Auth Platform → Clients → Create client, chọn <strong>Chrome Extension</strong> (một số giao diện ghi Chrome App), nhập ID extension vào Application ID / Item ID. Sao chép Client ID kết thúc bằng <code>.apps.googleusercontent.com</code>.</li>
+<li>Mở <code>manifest.json</code> trong thư mục extension. Thêm thuộc tính sau ở cấp ngoài cùng, nhớ dấu phẩy giữa các thuộc tính và thay Client ID thật:
+<pre>"oauth2": {
+  "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+  "scopes": ["https://www.googleapis.com/auth/spreadsheets"]
+}</pre></li>
+<li>Trong <code>chrome://extensions</code>, nhấn Reload của Bookmark Manager. Mở trang quản lý → Google Sheets, dán URL bảng tính → <strong>Kết nối / Tiếp tục</strong>. Đăng nhập và cấp quyền cho ứng dụng bạn vừa tạo.</li>
+<li>Đợi trạng thái <strong>Đã đồng bộ</strong>, mở Sheet kiểm tra hai tab <code>Bookmarks</code>, <code>Folders</code>. Đây là lịch sử thay đổi, có thể có nhiều dòng cho cùng bookmark. Cột <code>data_json</code> chứa đầy đủ dữ liệu để khôi phục. Không sửa/xóa/sắp xếp trực tiếp các dòng lịch sử; thay đổi bookmark trong extension.</li>
+</ol>
+<h2>Cách hoạt động và khôi phục</h2>
+<p>Extension giữ cache local để dùng offline, tự thử đồng bộ sau khi sửa và mỗi 5 phút khi Chrome chạy. Khi cache mất, kết nối lại cùng Sheet để tải lại dữ liệu. Cache trống không tạo lệnh xóa cloud. Các lần xóa được lưu thành dòng lịch sử; lệnh cho cùng bản ghi được áp dụng theo thứ tự trên Sheets. Khi hai máy sửa cùng bookmark, thay đổi gửi lên sau sẽ thắng.</p>
+<p>Giữ URL Sheet ở nơi khác ngoài extension. Nếu local mất trước khi đồng bộ, thay đổi đang chờ có thể mất. Hãy export backup JSON định kỳ. Đồng bộ không thay thế bản sao lưu độc lập; phiên bản này không tự tạo backup định kỳ và không đồng bộ cài đặt giao diện hoặc tab view chưa có bookmark.</p>
+<p>Để lấy lại bản ghi xóa nhầm, tìm dòng <code>put</code> phù hợp trước dòng <code>delete</code>, lấy đối tượng trong <code>data_json</code> và ghép vào bản backup JSON hiện tại. Import backup thay thế dữ liệu local và sẽ đồng bộ các thay đổi đó: hãy export dữ liệu hiện tại trước.</p>
+<p>Không thể đổi sang Sheet khác ngay trong giao diện để tránh gửi nhầm hàng đợi. Nút Tạm dừng giữ cache và các thay đổi chưa gửi. Kết nối / Tiếp tục dùng lại cùng Sheet.</p>
+<p>Nếu gặp 401: nhấn Kết nối / Tiếp tục để cấp quyền lại. Nếu 403: kiểm tra Sheets API đã bật, tài khoản có quyền sửa Sheet và có trong Test users. Nếu 429 hoặc mất mạng: hàng đợi được giữ lại và thử lại với thời gian chờ tăng dần. Lịch sử càng dài thì đọc đồng bộ càng chậm; phù hợp dùng cá nhân, chưa có chức năng rút gọn lịch sử.</p>
+<p>Tài liệu: <a href="https://developer.chrome.com/docs/extensions/how-to/integrate/oauth">OAuth cho Chrome Extension</a> · <a href="https://developers.google.com/workspace/sheets/api/limits">Giới hạn Sheets API</a>.</p>
+</body></html>

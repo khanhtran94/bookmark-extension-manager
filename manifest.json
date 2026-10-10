@@ -1,9 +1,11 @@
 ﻿{
   "manifest_version": 3,
   "name": "Bookmark Manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "minimum_chrome_version": "110",
   "description": "Quan ly bookmark don gian",
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "identity", "alarms", "unlimitedStorage"],
+  "host_permissions": ["https://sheets.googleapis.com/*"],
   "background": {
     "service_worker": "background.js"
   },
@@ -13,5 +15,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Bookmark Manager"
-  }
+  },
+  "oauth2": {
+   "client_id": "479068642982-mkvl4e7aqp596afmocdnlp867vtdet4d.apps.googleusercontent.com",
+   "scopes": ["https://www.googleapis.com/auth/spreadsheets"]
+}
 }

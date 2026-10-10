@@ -41,6 +41,7 @@ let selectedCreatedView = (() => {
 })();
 let currentBookmarks = [];
 let currentFolders = [];
+let persistedState = { bookmarks: [], folders: [] };
 let selectedFolderFilter = FILTER_ALL;
 let selectedTagFilter = FILTER_ALL;
 let selectedViewTab = FILTER_ALL;
@@ -870,8 +871,9 @@ async function reloadData() {
   await BookmarkDB.init();
   await BookmarkDB.migrateFromChromeStorage();
 
-  const rawBookmarks = await BookmarkDB.getAllBookmarks();
-  const rawFolders = await BookmarkDB.getAllFolders();
+  const snapshot = await BookmarkDB.snapshot();
+  const rawBookmarks = snapshot.bookmarks;
+  const rawFolders = snapshot.folders;
 
   const normalizedFolders = rawFolders.map(normalizeFolder).filter((folder) => folder.id && folder.name);
   const { folders: flatFolders, oldToFlatId } = flattenFoldersSingleLevel(normalizedFolders);
@@ -886,22 +888,21 @@ async function reloadData() {
   currentFolders = flatFolders;
   currentBookmarks = normalizedBookmarks;
 
-  if (window.BookmarkDB) {
-    await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
-  }
+  persistedState = structuredClone({ bookmarks: currentBookmarks, folders: currentFolders });
 
   renderAllControls();
 }
 
-function deleteBookmark(id) {
+async function deleteBookmark(id) {
   currentBookmarks = currentBookmarks.filter((bookmark) => bookmark.id !== id);
   if (window.BookmarkDB) {
-    BookmarkDB.deleteBookmark(id);
+    await BookmarkDB.deleteBookmark(id);
+    await reloadData();
   }
   renderAllControls();
 }
 
-function saveBookmarkFolder(id) {
+async function saveBookmarkFolder(id) {
   const select = document.querySelector(`.folder-select[data-id="${id}"]`);
   const folderId = select ? select.value : "";
 
@@ -916,12 +917,13 @@ function saveBookmarkFolder(id) {
   });
 
   if (updatedBookmark && window.BookmarkDB) {
-    BookmarkDB.putBookmark(updatedBookmark);
+    await BookmarkDB.putBookmark(updatedBookmark);
+    await reloadData();
   }
   renderAllControls();
 }
 
-function saveBookmarkViewTab(id) {
+async function saveBookmarkViewTab(id) {
   const select = document.querySelector(`.view-tab-select[data-id="${id}"]`);
   const viewTab = normalizeViewTabName(select ? select.value : "");
   if (viewTab) {
@@ -944,7 +946,8 @@ function saveBookmarkViewTab(id) {
   });
 
   if (updatedBookmark && window.BookmarkDB) {
-    BookmarkDB.putBookmark(updatedBookmark);
+    await BookmarkDB.putBookmark(updatedBookmark);
+    await reloadData();
   }
   renderAllControls();
 }
@@ -973,7 +976,7 @@ function addCustomViewTab() {
   renderBookmarks();
 }
 
-function addTagFromCardInput(id, rawInput) {
+async function addTagFromCardInput(id, rawInput) {
   const newTags = parseTags(rawInput || "");
   if (!newTags.length) {
     return;
@@ -993,12 +996,13 @@ function addTagFromCardInput(id, rawInput) {
   });
 
   if (updatedBookmark && window.BookmarkDB) {
-    BookmarkDB.putBookmark(updatedBookmark);
+    await BookmarkDB.putBookmark(updatedBookmark);
+    await reloadData();
   }
   renderAllControls();
 }
 
-function openBookmark(id, url) {
+async function openBookmark(id, url) {
   if (!url) {
     return;
   }
@@ -1031,12 +1035,13 @@ function openBookmark(id, url) {
   }
 
   if (updatedBookmark && window.BookmarkDB) {
-    // Persist asynchronously without forcing a heavy full re-render.
-    BookmarkDB.putBookmark(updatedBookmark);
+    // Wait for the transaction before refreshing the displayed count.
+    await BookmarkDB.putBookmark(updatedBookmark);
+    await reloadData();
   }
 }
 
-function createFolder() {
+async function createFolder() {
   const name = newFolderNameInput.value.trim();
 
   if (!name) {
@@ -1057,13 +1062,14 @@ function createFolder() {
 
   currentFolders = [...currentFolders, newFolder];
   if (window.BookmarkDB) {
-    BookmarkDB.putFolder(newFolder);
+    await BookmarkDB.putFolder(newFolder);
+    await reloadData();
   }
   newFolderNameInput.value = "";
   renderAllControls();
 }
 
-function renameSelectedFolder() {
+async function renameSelectedFolder() {
   const selectedFolder = currentFolders.find((folder) => folder.id === selectedFolderFilter);
   if (!selectedFolder) {
     return;
@@ -1088,7 +1094,8 @@ function renameSelectedFolder() {
   });
 
   if (updatedFolder && window.BookmarkDB) {
-    BookmarkDB.putFolder(updatedFolder);
+    await BookmarkDB.putFolder(updatedFolder);
+    await reloadData();
   }
   renderAllControls();
 }
@@ -1118,7 +1125,8 @@ async function deleteSelectedFolder() {
   resetToFirstPage();
 
   if (window.BookmarkDB) {
-    await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
+    await BookmarkDB.replaceAll(currentBookmarks, currentFolders, persistedState);
+    await reloadData();
   }
 
   renderAllControls();
@@ -1196,7 +1204,8 @@ async function importChromeBookmarks() {
     currentBookmarks = nextState.bookmarks;
 
     if (window.BookmarkDB) {
-      await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
+      await BookmarkDB.replaceAll(currentBookmarks, currentFolders, persistedState);
+    await reloadData();
     }
 
     renderAllControls();
@@ -1281,7 +1290,8 @@ async function importBackupData() {
     }
 
     if (window.BookmarkDB) {
-      await BookmarkDB.replaceAll(currentBookmarks, currentFolders);
+      await BookmarkDB.replaceAll(currentBookmarks, currentFolders, persistedState);
+    await reloadData();
     }
 
     resetToFirstPage();
@@ -1542,3 +1552,15 @@ bookmarkList.addEventListener("keydown", (e) => {
 
 updateViewButtons();
 reloadData();
+
+chrome.runtime.onMessage.addListener(message => {
+  if (message.type === 'sheets-refreshed') {
+    // Avoid destroying an input the user is currently editing.
+    if (document.activeElement?.matches('input, select')) {
+      document.activeElement.addEventListener('blur', () => reloadData(), { once: true });
+    } else reloadData();
+  }
+});
+window.addEventListener('unhandledrejection', event => {
+  backupStatus.textContent = `Không thể lưu thay đổi: ${event.reason?.message || event.reason}`;
+});

@@ -286,6 +286,8 @@ async function initializePopup() {
 }
 
 saveBtn.addEventListener("click", async () => {
+  saveBtn.disabled = true;
+  try {
   if (!window.BookmarkDB) {
     message.textContent = "Khong the khoi tao bo luu du lieu.";
     return;
@@ -351,6 +353,9 @@ saveBtn.addEventListener("click", async () => {
     folderInput.value = "";
   }
   await hydrateSuggestionsFromDB();
+  } catch (error) {
+    message.textContent = `Không thể lưu bookmark: ${error.message}`;
+  } finally { saveBtn.disabled = false; }
 });
 
 openManagerBtn.addEventListener("click", () => {

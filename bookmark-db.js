@@ -1,20 +1,5 @@
 (function attachBookmarkDB(global) {
-  const DB_NAME = "bookmark_manager_db";
-  const DB_VERSION = 1;
-  const BOOKMARKS_STORE = "bookmarks";
-  const FOLDERS_STORE = "folders";
-  const META_STORE = "meta";
-  const MIGRATION_KEY = "migrated_from_chrome_storage_v1";
-
-  let dbPromise = null;
-
-  function promisifyRequest(request) {
-    return new Promise((resolve, reject) => {
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error("IndexedDB request failed"));
-    });
-  }
-
+  const MIGRATION_KEY = 'migrated_from_chrome_storage_v1';
   function normalizeBookmark(bookmark) {
     return {
       ...bookmark,
@@ -38,162 +23,187 @@
     };
   }
 
-  function openDB() {
-    if (dbPromise) {
-      return dbPromise;
-    }
 
-    dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-
-        if (!db.objectStoreNames.contains(BOOKMARKS_STORE)) {
-          const bookmarksStore = db.createObjectStore(BOOKMARKS_STORE, { keyPath: "id" });
-          bookmarksStore.createIndex("url", "url", { unique: true });
-          bookmarksStore.createIndex("createdAt", "createdAt", { unique: false });
-          bookmarksStore.createIndex("folderId", "folderId", { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains(FOLDERS_STORE)) {
-          db.createObjectStore(FOLDERS_STORE, { keyPath: "id" });
-        }
-
-        if (!db.objectStoreNames.contains(META_STORE)) {
-          db.createObjectStore(META_STORE, { keyPath: "key" });
-        }
+  let dbPromise;
+  const lock = (fn) => navigator.locks.request('bookmark-data', fn);
+  const request = (req) => new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  function openConnection(version) {
+    return new Promise((resolve, reject) => {
+      const req = version === undefined
+        ? indexedDB.open('bookmark_manager_db')
+        : indexedDB.open('bookmark_manager_db', version);
+      let blocked = false;
+      req.onblocked = () => {
+        blocked = true;
+        reject(new Error('Hay dong cac tab Bookmark Manager va popup cu, roi Reload extension de nang cap DB.'));
       };
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error("Unable to open IndexedDB"));
+      req.onupgradeneeded = () => {
+        if (blocked) { req.transaction.abort(); return; }
+        const db = req.result;
+        const store = db.objectStoreNames.contains('bookmarks')
+          ? req.transaction.objectStore('bookmarks')
+          : db.createObjectStore('bookmarks', { keyPath: 'id' });
+        if (!store.indexNames.contains('url')) store.createIndex('url', 'url', { unique: true });
+        if (!store.indexNames.contains('createdAt')) store.createIndex('createdAt', 'createdAt');
+        if (!store.indexNames.contains('folderId')) store.createIndex('folderId', 'folderId');
+        if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        if (blocked) { db.close(); return; }
+        db.onversionchange = () => { db.close(); dbPromise = null; };
+        db.onclose = () => { dbPromise = null; };
+        resolve(db);
+      };
+      req.onerror = () => reject(req.error);
     });
-
+  }
+  function hasSchema(db) {
+    if (!['bookmarks', 'folders', 'meta'].every(name => db.objectStoreNames.contains(name))) return false;
+    const store = db.transaction('bookmarks', 'readonly').objectStore('bookmarks');
+    return ['url', 'createdAt', 'folderId'].every(name => store.indexNames.contains(name));
+  }
+  function openDB() {
+    if (!dbPromise) {
+      // Inspect the actual schema, including databases already at v2 or later.
+      // Serialize repair across the popup, manager tabs and service worker.
+      const opening = navigator.locks.request('bookmark-schema', async () => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const db = await openConnection();
+          if (hasSchema(db)) return db;
+          const nextVersion = db.version + 1;
+          db.close();
+          let repaired;
+          try { repaired = await openConnection(nextVersion); }
+          catch (error) {
+            if (error.name === 'VersionError') continue;
+            throw error;
+          }
+          if (hasSchema(repaired)) return repaired;
+          repaired.close();
+        }
+        throw new Error('Khong the sua cau truc Bookmark DB. Hay dong cac tab cu va Reload extension.');
+      });
+      dbPromise = opening;
+      opening.catch(() => { if (dbPromise === opening) dbPromise = null; });
+    }
     return dbPromise;
   }
-
-  function getTransaction(db, stores, mode = "readonly") {
-    return db.transaction(stores, mode);
-  }
-
-  function delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  async function getMeta(key) {
+  async function transaction(mode, fn) {
     const db = await openDB();
-    const tx = getTransaction(db, [META_STORE], "readonly");
-    const store = tx.objectStore(META_STORE);
-    return promisifyRequest(store.get(key));
+    const tx = db.transaction(['bookmarks', 'folders', 'meta'], mode);
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error || new Error('Không thể lưu dữ liệu.'));
+      tx.onerror = () => {};
+    });
+    try {
+      const result = await fn(tx);
+      await done;
+      return result;
+    } catch (error) {
+      try { tx.abort(); } catch (_) {}
+      await done.catch(() => {});
+      throw error;
+    }
   }
-
-  async function setMeta(key, value, retries = 2) {
-    for (let attempt = 0; attempt <= retries; attempt += 1) {
-      try {
-        const db = await openDB();
-        const tx = getTransaction(db, [META_STORE], "readwrite");
-        const store = tx.objectStore(META_STORE);
-        const request = store.put({ key, value, at: Date.now() });
-
-        await new Promise((resolve, reject) => {
-          request.onerror = () => reject(request.error || new Error("Meta put failed"));
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error || new Error("Meta transaction failed"));
-          tx.onabort = () => reject(tx.error || new Error("Meta transaction aborted"));
-        });
-        return;
-      } catch (error) {
-        if (error && error.name === "TransactionInactiveError" && attempt < retries) {
-          await delay(0);
-          continue;
-        }
-        throw error;
+  const getAll = (name) => transaction('readonly', tx => request(tx.objectStore(name).getAll()));
+  const getAllBookmarks = () => getAll('bookmarks');
+  const getAllFolders = () => getAll('folders');
+  const getMeta = (key) => transaction('readonly', tx => request(tx.objectStore('meta').get(key)));
+  const setMeta = (key, value) => transaction('readwrite', tx => tx.objectStore('meta').put({ key, value }));
+  function eventFor(kind, id, value) {
+    return { op: crypto.randomUUID(), kind, id, value, at: Date.now() };
+  }
+  async function queue(tx, event) {
+    const sequence = (await request(tx.objectStore('meta').get('sync-sequence')))?.value || 0;
+    event.sequence = sequence + 1;
+    tx.objectStore('meta').put({ key: 'sync-sequence', value: event.sequence });
+    tx.objectStore('meta').put({ key: 'pending:' + event.op, value: event });
+  }
+  function notify() {
+    if (global.document) {
+      chrome.runtime.sendMessage({ type: 'sheets-dirty' }).catch(() => {});
+      global.dispatchEvent(new Event('bookmark-local-change'));
+    }
+  }
+  async function change(kind, values, deleted = []) {
+    await lock(() => transaction('readwrite', async tx => {
+      const store = tx.objectStore(kind);
+      for (const value of values) {
+        const old = await request(store.get(value.id));
+        if (JSON.stringify(old) === JSON.stringify(value)) continue;
+        store.put(value);
+        await queue(tx, eventFor(kind, value.id, value));
       }
-    }
+      for (const id of deleted) {
+        store.delete(id);
+        await queue(tx, eventFor(kind, id, null));
+      }
+    }));
+    notify();
   }
-
-  async function getAllBookmarks() {
-    const db = await openDB();
-    const tx = getTransaction(db, [BOOKMARKS_STORE], "readonly");
-    const store = tx.objectStore(BOOKMARKS_STORE);
-    const data = await promisifyRequest(store.getAll());
-    return (data || []).map(normalizeBookmark);
+  const putBookmarks = values => change('bookmarks', values.map(normalizeBookmark));
+  const putFolders = values => change('folders', values.map(normalizeFolder));
+  async function replaceAll(bookmarks, folders, baseline) {
+    await lock(() => transaction('readwrite', async tx => {
+      for (const [kind, values] of [
+        ['bookmarks', bookmarks.map(normalizeBookmark)], ['folders', folders.map(normalizeFolder)]
+      ]) {
+        const store = tx.objectStore(kind);
+        const old = await request(store.getAll());
+        const next = new Map(values.map(value => [value.id, value]));
+        const previous = new Map((baseline?.[kind] || old).map(value => [value.id, value]));
+        const merged = new Map(old.map(value => [value.id, value]));
+        for (const value of values) {
+          if (JSON.stringify(previous.get(value.id)) !== JSON.stringify(value)) {
+            merged.set(value.id, value);
+            await queue(tx, eventFor(kind, value.id, value));
+          }
+        }
+        for (const value of previous.values()) {
+          if (!next.has(value.id)) {
+            merged.delete(value.id);
+            await queue(tx, eventFor(kind, value.id, null));
+          }
+        }
+        // Clear/reinsert in one transaction also supports URL swaps under the unique index.
+        store.clear();
+        for (const value of merged.values()) store.put(value);
+      }
+    }));
+    notify();
   }
-
-  async function getAllFolders() {
-    const db = await openDB();
-    const tx = getTransaction(db, [FOLDERS_STORE], "readonly");
-    const store = tx.objectStore(FOLDERS_STORE);
-    const data = await promisifyRequest(store.getAll());
-    return (data || []).map(normalizeFolder);
+  async function snapshot() {
+    return transaction('readonly', async tx => {
+      const [bookmarks, folders, meta] = await Promise.all(
+        ['bookmarks', 'folders', 'meta'].map(name => request(tx.objectStore(name).getAll()))
+      );
+      return { bookmarks, folders, pending: meta.filter(x => x.key.startsWith('pending:')).map(x => x.value).sort((a, b) => a.sequence - b.sequence) };
+    });
   }
-
-  async function findBookmarkByUrl(url) {
-    const db = await openDB();
-    const tx = getTransaction(db, [BOOKMARKS_STORE], "readonly");
-    const store = tx.objectStore(BOOKMARKS_STORE);
-    const index = store.index("url");
-    const result = await promisifyRequest(index.get(url));
-    return result ? normalizeBookmark(result) : null;
+  // Caller holds bookmark-data lock; applying remote state never creates outgoing changes.
+  async function applyRemote(state, acknowledged) {
+    return transaction('readwrite', tx => {
+      for (const kind of ['bookmarks', 'folders']) {
+        const store = tx.objectStore(kind);
+        store.clear();
+        state[kind].forEach(value => store.put(value));
+      }
+      acknowledged.forEach(op => tx.objectStore('meta').delete('pending:' + op));
+    });
   }
-
-  async function putBookmark(bookmark) {
-    const db = await openDB();
-    const tx = getTransaction(db, [BOOKMARKS_STORE], "readwrite");
-    const store = tx.objectStore(BOOKMARKS_STORE);
-    await promisifyRequest(store.put(normalizeBookmark(bookmark)));
+  async function stageEvents(events) {
+    return transaction('readwrite', async tx => {
+      for (const event of events) {
+        if (!(await request(tx.objectStore('meta').get('pending:' + event.op)))) await queue(tx, event);
+      }
+    });
   }
-
-  async function putBookmarks(bookmarks) {
-    const db = await openDB();
-    const tx = getTransaction(db, [BOOKMARKS_STORE], "readwrite");
-    const store = tx.objectStore(BOOKMARKS_STORE);
-    for (const bookmark of bookmarks || []) {
-      await promisifyRequest(store.put(normalizeBookmark(bookmark)));
-    }
-  }
-
-  async function deleteBookmark(id) {
-    const db = await openDB();
-    const tx = getTransaction(db, [BOOKMARKS_STORE], "readwrite");
-    const store = tx.objectStore(BOOKMARKS_STORE);
-    await promisifyRequest(store.delete(id));
-  }
-
-  async function putFolder(folder) {
-    const db = await openDB();
-    const tx = getTransaction(db, [FOLDERS_STORE], "readwrite");
-    const store = tx.objectStore(FOLDERS_STORE);
-    await promisifyRequest(store.put(normalizeFolder(folder)));
-  }
-
-  async function putFolders(folders) {
-    const db = await openDB();
-    const tx = getTransaction(db, [FOLDERS_STORE], "readwrite");
-    const store = tx.objectStore(FOLDERS_STORE);
-    for (const folder of folders || []) {
-      await promisifyRequest(store.put(normalizeFolder(folder)));
-    }
-  }
-
-  async function replaceAll(bookmarks, folders) {
-    const db = await openDB();
-    const tx = getTransaction(db, [BOOKMARKS_STORE, FOLDERS_STORE], "readwrite");
-    const bookmarksStore = tx.objectStore(BOOKMARKS_STORE);
-    const foldersStore = tx.objectStore(FOLDERS_STORE);
-
-    await promisifyRequest(bookmarksStore.clear());
-    await promisifyRequest(foldersStore.clear());
-
-    for (const folder of folders || []) {
-      await promisifyRequest(foldersStore.put(normalizeFolder(folder)));
-    }
-
-    for (const bookmark of bookmarks || []) {
-      await promisifyRequest(bookmarksStore.put(normalizeBookmark(bookmark)));
-    }
-  }
-
   function getFromChromeStorage(keys) {
     return new Promise((resolve) => {
       if (!global.chrome || !chrome.storage || !chrome.storage.local) {
@@ -206,6 +216,8 @@
   }
 
   async function migrateFromChromeStorage() {
+    // After cache loss, restore from the configured cloud instead of resurrecting legacy records.
+    if ((await chrome.storage.local.get('sheetsConfig')).sheetsConfig?.id) return;
     const migrated = await getMeta(MIGRATION_KEY);
     if (migrated && migrated.value === true) {
       return;
@@ -238,17 +250,14 @@
     await setMeta(MIGRATION_KEY, true);
   }
 
+
   global.BookmarkDB = {
-    init: openDB,
-    migrateFromChromeStorage,
-    getAllBookmarks,
-    getAllFolders,
-    findBookmarkByUrl,
-    putBookmark,
-    putBookmarks,
-    deleteBookmark,
-    putFolder,
-    putFolders,
-    replaceAll
+    init: openDB, lock, snapshot, applyRemote, stageEvents, eventFor, getMeta, setMeta,
+    migrateFromChromeStorage, getAllBookmarks, getAllFolders,
+    findBookmarkByUrl: url => transaction('readonly', tx => request(tx.objectStore('bookmarks').index('url').get(url))),
+    putBookmarks, putFolders, replaceAll,
+    putBookmark: value => putBookmarks([value]),
+    putFolder: value => putFolders([value]),
+    deleteBookmark: id => change('bookmarks', [], [id])
   };
-})(window);
+})(globalThis);

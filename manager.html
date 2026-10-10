@@ -602,6 +602,21 @@
 </head>
 <body>
   <h1>Quan ly Bookmark</h1>
+  <details id="sheetsPanel" class="org-panel" style="display:block;padding:16px" open>
+    <summary>Google Sheets · Lưu dữ liệu trên cloud</summary>
+    <p id="sheetsStatus" role="status" aria-live="polite">Đang kiểm tra đồng bộ…</p>
+    <label for="sheetsUrl">Link Google Sheet riêng để lưu bookmark</label>
+    <input id="sheetsUrl" type="text" placeholder="https://docs.google.com/spreadsheets/d/…/edit" style="width: min(100%, 620px);padding:8px;margin:8px 0" />
+    <div>
+      <button id="sheetsConnect" type="button">Kết nối / Tiếp tục</button>
+      <button id="sheetsNow" type="button">Đồng bộ ngay</button>
+      <button id="sheetsPause" type="button">Tạm dừng</button>
+      <a id="sheetsLink" target="_blank" rel="noopener" hidden>Mở Sheet</a>
+      <a href="sheets-setup.html" target="_blank" rel="noopener">Hướng dẫn thiết lập</a>
+    </div>
+    <p>Bookmark và folder được đồng bộ. Chỉ các thay đổi báo “Đã đồng bộ” mới có bản trên Google.
+      Hãy tiếp tục export backup định kỳ. Cài đặt giao diện và tab view trống chỉ lưu trên máy.</p>
+  </details>
 
   <div class="toolbar">
     <div class="toolbar-row">
@@ -687,5 +702,6 @@
 
   <script src="bookmark-db.js"></script>
   <script src="manager.js"></script>
+  <script src="sheets-ui.js"></script>
 </body>
 </html>
