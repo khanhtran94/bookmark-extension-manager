@@ -4,9 +4,13 @@
   const input = document.getElementById('sheetsUrl');
   const link = document.getElementById('sheetsLink');
   let busy = false;
+  let refreshVersion = 0;
   async function refresh() {
+    const version = ++refreshVersion;
     const { sheetsConfig: config, sheetsStatus: status } = await chrome.storage.local.get(['sheetsConfig', 'sheetsStatus']);
     const { pending } = await BookmarkDB.snapshot();
+    // An older read must not overwrite a newer successful sync notification.
+    if (version !== refreshVersion) return;
     if (input && config?.id && !input.value) input.value = `https://docs.google.com/spreadsheets/d/${config.id}/edit`;
     if (link) {
       link.hidden = !config?.id;
@@ -15,7 +19,11 @@
     let text = 'Chưa kết nối Google Sheets — dữ liệu chỉ lưu trên máy.';
     if (config?.enabled) {
       if (status?.state === 'syncing') text = 'Đang đồng bộ Google Sheets…';
-      else if (status?.state === 'error') text = `Chưa đồng bộ: ${status.message}`;
+      else if (status?.state === 'error') {
+        const saved = status.lastSync ? `Đồng bộ thành công gần nhất: ${new Date(status.lastSync).toLocaleString('vi-VN')}. ` : '';
+        const waiting = pending.length ? `Còn ${pending.length} thay đổi chờ đồng bộ. ` : '';
+        text = `${saved}${waiting}Lần đồng bộ mới nhất gặp lỗi: ${status.message}`;
+      }
       else if (pending.length) text = `Chờ đồng bộ ${pending.length} thay đổi.`;
       else if (status?.lastSync) text = `Đã đồng bộ: ${new Date(status.lastSync).toLocaleString('vi-VN')}`;
       else text = 'Chờ đồng bộ Google Sheets.';

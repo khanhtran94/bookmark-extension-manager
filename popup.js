@@ -336,7 +336,7 @@ saveBtn.addEventListener("click", async () => {
     };
     await BookmarkDB.putBookmark(updatedBookmark);
     notifyBookmarkUpdated(updatedBookmark.url);
-    message.textContent = "Link da ton tai, da cap nhat tag/folder.";
+    message.textContent = "Đã cập nhật tag/folder trên máy. Xem trạng thái Google Sheets bên dưới.";
     tagsInput.value = "";
     if (folderInput) {
       folderInput.value = "";
@@ -347,7 +347,7 @@ saveBtn.addEventListener("click", async () => {
 
   await BookmarkDB.putBookmark(newBookmark);
   notifyBookmarkUpdated(newBookmark.url);
-  message.textContent = "Da luu bookmark thanh cong.";
+  message.textContent = "Đã lưu bookmark trên máy. Xem trạng thái Google Sheets bên dưới.";
   tagsInput.value = "";
   if (folderInput) {
     folderInput.value = "";

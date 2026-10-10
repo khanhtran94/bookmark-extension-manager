@@ -1,5 +1,7 @@
 (function attachBookmarkDB(global) {
   const MIGRATION_KEY = 'migrated_from_chrome_storage_v1';
+  const BUILD = 'db-diagnostic-2026-10-10-1';
+  const SOURCE = global.document?.currentScript?.src || global.location?.href || 'unknown';
   function normalizeBookmark(bookmark) {
     return {
       ...bookmark,
@@ -95,7 +97,15 @@
   }
   async function transaction(mode, fn) {
     const db = await openDB();
-    const tx = db.transaction(['bookmarks', 'folders', 'meta'], mode);
+    let tx;
+    try {
+      tx = db.transaction(['bookmarks', 'folders', 'meta'], mode);
+    } catch (cause) {
+      const detail = { build: BUILD, source: SOURCE, database: db.name,
+        version: db.version, stores: Array.from(db.objectStoreNames), mode };
+      console.error('BookmarkDB transaction failed', detail, cause);
+      throw new Error(`${cause.name}: ${cause.message} | ${JSON.stringify(detail)}`, { cause });
+    }
     const done = new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
       tx.onabort = () => reject(tx.error || new Error('Không thể lưu dữ liệu.'));
@@ -252,6 +262,18 @@
 
 
   global.BookmarkDB = {
+    build: BUILD,
+    diagnose: async () => {
+      const result = { build: BUILD, source: SOURCE, extensionId: global.chrome?.runtime?.id };
+      try {
+        const db = await openConnection();
+        result.database = db.name;
+        result.version = db.version;
+        result.stores = Array.from(db.objectStoreNames);
+        db.close();
+      } catch (error) { result.error = `${error.name}: ${error.message}`; }
+      return result;
+    },
     init: openDB, lock, snapshot, applyRemote, stageEvents, eventFor, getMeta, setMeta,
     migrateFromChromeStorage, getAllBookmarks, getAllFolders,
     findBookmarkByUrl: url => transaction('readonly', tx => request(tx.objectStore('bookmarks').index('url').get(url))),
